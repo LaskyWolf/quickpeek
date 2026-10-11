@@ -269,6 +269,29 @@ else:
     print("skipped text finding: onnxruntime or the PaddleOCR models are missing")
 assert peek.join_words([("Summer", (0, 0, 100, 40)), ("2026", (130, 2, 80, 40))]) == [("Summer 2026", (0, 0, 210, 42))]
 
+# GIF: a timeline that seeks both ways, and the speed menu; side arrows flip files
+if shutil.which("ffmpeg"):
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=d=2:s=64x48:r=10",
+                    str(d / "anim.gif")], check=True)
+    pane = show("anim.gif")
+    assert pane.timeline.maximum() == 19 and pane.timeline.isVisible()
+    pane.play.click()
+    pane.timeline.sliderMoved.emit(15)
+    assert pane.movie.currentFrameNumber() == 15 and pane.frame_label.text() == "16 / 20", pane.frame_label.text()
+    pane.timeline.sliderMoved.emit(3)
+    assert pane.movie.currentFrameNumber() == 3
+    pane.speed.menu().actions()[-1].trigger()
+    assert pane.movie.speed() == 200 and pane.speed.text() == "2×"
+    before = w.index
+    left, right = w.arrows
+    assert left.isVisible() and left.fade.opacity() == 0, "hidden until the mouse is over it"
+    QTest.mouseClick(right, Qt.LeftButton)
+    assert w.index == (before + 1) % len(w.files)
+    QTest.mouseClick(left, Qt.LeftButton)
+    assert w.index == before
+    (d / "anim.gif").unlink()
+    show("img10.png")
+
 # F11 fullscreen, Escape leaves it before closing
 QTest.keyClick(w, Qt.Key_F11)
 assert w.isFullScreen()
@@ -460,6 +483,11 @@ if shutil.which("ffmpeg"):
     assert len(wave.peaks) >= 500 and max(wave.peaks) == 1
     QTest.mouseClick(wave, Qt.LeftButton, Qt.NoModifier, QPoint(wave.width() // 4, wave.height() // 2))
     assert wait(lambda: abs(w.player.position() - 1000) < 300), w.player.position()
+    if not w.player.isPlaying():
+        QTest.keyClick(w, Qt.Key_K)
+    assert wait(lambda: w.player.isPlaying())
+    QTest.qWait(300)
+    assert wave.frames.isActive() and abs(wave.position() - w.player.position()) < 400  # glides between reports
     subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=d=2:s=64x48", str(d / "clip.mp4")],
                    check=True)
     pane = show("clip.mp4")
@@ -570,7 +598,9 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
     QTest.keyClick(w, Qt.Key_S)
     pane.picked(QPointF(400, 400), Qt.NoModifier)  # clicked while the picture is read: ignored
     assert not pane.pending
+    assert pane.scan is not None, "a band sweeps the picture while it is read"
     assert wait(lambda: pane.segmenter is not None, 120000), pane.subject_status.text()
+    assert pane.scan is None
     assert pane.mask is None
     pane.picked(QPointF(400, 400), Qt.NoModifier)
     assert wait(lambda: pane.mask is not None, 60000), pane.subject_status.text()

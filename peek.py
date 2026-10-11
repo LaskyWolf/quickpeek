@@ -33,7 +33,7 @@ from xml.sax.saxutils import escape
 
 import shiboken6
 from PySide6.QtCore import (QAbstractAnimation, QEasingCurve, QVariantAnimation, QFile, Q_ARG, Qt, QCollator, QDate, QEvent, QLibraryInfo, QLocale, QLineF, QMarginsF, QMimeData, QMetaObject, QMimeDatabase, QModelIndex, QObject,
-                            QPoint, QPointF, QProcess, QRect, QRectF, QSettings, QSize, QSizeF, QStandardPaths, QTimer, QUrl, Signal)
+                            QElapsedTimer, QPoint, QPropertyAnimation, QPointF, QProcess, QRect, QRectF, QSettings, QSize, QSizeF, QStandardPaths, QTimer, QUrl, Signal)
 from PySide6.QtGui import (QTextCursor, QColor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QImageReader, QImageWriter, QKeySequence,
                            QMovie, QPageSize, QPainter, QPainterPath, QPalette, QPen, QPdfWriter, QPixmap, QShortcut, QCursor, QFontMetrics, QTextDocument, QTransform, QLinearGradient)
 from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer, QtAudio
@@ -42,7 +42,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtPdf import QPdfDocumentRenderOptions, QPdfDocument, QPdfSearchModel
 from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtQuick import QQuickView
-from PySide6.QtWidgets import (QGraphicsBlurEffect, QInputDialog, QMenu, QMessageBox, QSlider, QStyleOptionSlider, QTextEdit, QAbstractItemView, QAbstractScrollArea, QApplication, QButtonGroup, QComboBox,
+from PySide6.QtWidgets import (QGraphicsBlurEffect, QGraphicsOpacityEffect, QInputDialog, QMenu, QMessageBox, QSlider, QStyleOptionSlider, QTextEdit, QAbstractItemView, QAbstractScrollArea, QApplication, QButtonGroup, QComboBox,
                                QFrame, QGraphicsDropShadowEffect, QGraphicsEllipseItem, QGraphicsItem,
                                QGraphicsPathItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsTextItem, QGraphicsScene, QGraphicsView,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit,
@@ -115,6 +115,8 @@ Item {
     property color background
     property color textColor
     property bool flying: false
+    property int lift: 0  // while flying: +1 E held (up), -1 Q held (down), along the world's vertical axis
+    property bool fast: false  // Shift held
     property bool wireframe: false
     property bool spin: false
     property bool grid: true
@@ -122,6 +124,8 @@ Item {
     property url scene  // balsam's QML version of the model: same look, plus its animations
     property var timelines: []
     signal animationsReady(var names)
+    signal stepFile(int delta)
+    property bool canStep: false
 
     onFlyingChanged: {
         if (flying) {  // start flying from wherever the orbit camera is looking
@@ -183,13 +187,46 @@ Item {
         onTriggered: orbit.eulerRotation.y += frameTime * 30  // degrees per second
     }
     OrbitCameraController { anchors.fill: view; origin: orbit; camera: camera; enabled: !root.flying }
-    WasdController { id: wasd; anchors.fill: view; controlledObject: flyCam; enabled: root.flying }
+    // R / F would move along the camera's own up, which tilts with the view: off, Q / E lift instead
+    WasdController { id: wasd; anchors.fill: view; controlledObject: flyCam; enabled: root.flying
+                     upSpeed: 0; downSpeed: 0 }
+    FrameAnimation {
+        running: root.flying && root.lift !== 0
+        // the controller's own pace: 5 units × speed per 1/100 s, 3× with Shift
+        onTriggered: flyCam.y += root.lift * 500 * wasd.speed * (root.fast ? wasd.shiftSpeed : 1) * frameTime
+    }
+    // Previous / next file, as in the other previews: widgets can't float over this view, so they're drawn here
+    component NavArrow: Item {
+        property int delta
+        width: 56; height: 112
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.canStep && !root.flying
+        opacity: hover.hovered ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+        HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.stepFile(delta) }
+        Rectangle {
+            anchors.centerIn: parent
+            width: 40; height: 40; radius: 20
+            color: Qt.rgba(root.background.r, root.background.g, root.background.b, 0.88)
+            border.color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.3)
+            Text {
+                anchors.centerIn: parent
+                anchors.verticalCenterOffset: -2
+                text: delta < 0 ? "\u2039" : "\u203a"
+                color: root.textColor
+                font.pixelSize: 30
+            }
+        }
+    }
+    NavArrow { delta: -1; anchors.left: parent.left }
+    NavArrow { delta: 1; anchors.right: parent.right }
     Text {
         anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 8 }
         color: root.textColor
         opacity: 0.7
         text: root.flying
-              ? "W A S D / arrows: move  ·  R / F: up / down  ·  Shift: faster  ·  drag: look  ·  Esc: stop flying"
+              ? "W A S D / arrows: move  ·  E / Q: up / down  ·  Shift: faster  ·  drag: look  ·  Esc: stop flying"
               : "Drag: rotate  ·  Ctrl+drag: pan  ·  Wheel: zoom"
     }
     Text {
@@ -716,6 +753,16 @@ class Tray(QWidget):
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7)
 
 
+def speed_button(apply):
+    """"1×" button with a 0.5×–2× menu; `apply(rate)` sets the speed."""
+    button = QToolButton(text="1×", toolTip="Playback speed", autoRaise=True, popupMode=QToolButton.InstantPopup)
+    menu = QMenu(button)
+    for rate in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
+        menu.addAction(f"{rate:g}×", lambda r=rate: (apply(r), button.setText(f"{r:g}×")))
+    button.setMenu(menu)
+    return button
+
+
 PANEL_BUTTON_ROOM = 44  # width kept free at the top right for the Details and Tools button
 
 
@@ -873,6 +920,49 @@ class TextPopup(QFrame):
         left = view.viewport().mapTo(view, rect.topLeft()).x()
         self.move(min(max(left, 8), max(view.width() - self.width() - 8, 8)),
                   min(max(top, 8), max(view.height() - self.height() - 8, 8)))
+
+
+class NavArrow(QWidget):
+    """Previous / next file, floating on the edge of the preview. Invisible until the mouse is over it."""
+
+    def __init__(self, parent, icon, tip, slot):
+        super().__init__(parent, toolTip=tip, cursor=Qt.PointingHandCursor)
+        self.icon = QIcon.fromTheme(icon)
+        self.slot = slot
+        self.setFixedSize(56, 112)  # a generous target, while the drawn circle stays small
+        self.fade = QGraphicsOpacityEffect(self, opacity=0)
+        self.setGraphicsEffect(self.fade)
+        self.animation = QPropertyAnimation(self.fade, b"opacity", self, duration=150)
+
+    def show_up(self, on):
+        self.animation.stop()
+        self.animation.setStartValue(self.fade.opacity())
+        self.animation.setEndValue(1.0 if on else 0.0)
+        self.animation.start()
+
+    def enterEvent(self, event):
+        self.show_up(True)
+
+    def leaveEvent(self, event):
+        self.show_up(False)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.slot()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        circle = QRectF(0, 0, 40, 40)
+        circle.moveCenter(QRectF(self.rect()).center())
+        fill = QColor(self.palette().window().color())
+        fill.setAlpha(225)
+        edge = QColor(self.palette().mid().color())
+        edge.setAlpha(120)
+        painter.setPen(QPen(edge, 1))
+        painter.setBrush(fill)
+        painter.drawEllipse(circle)
+        self.icon.paint(painter, circle.adjusted(10, 10, -10, -10).toRect())
 
 
 class DragIcon(QLabel):
@@ -1221,6 +1311,8 @@ class ImagePane(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(bar)
         layout.addWidget(self.view, 1)
+        if self.movie:
+            layout.addLayout(self.movie_bar())
         self.subject_tray.hide()
         self.copy_tray.hide()
         self.brush_tray.hide()
@@ -1232,6 +1324,57 @@ class ImagePane(QWidget):
                            (("S",), lambda: self.subject_button.isEnabled() and self.subject_button.toggle())):
             for key in keys:
                 QShortcut(key, self, slot)
+
+    def movie_bar(self):
+        """GIF / animated WebP controls like the video player's: play/pause, timeline, frame, speed."""
+        movie = self.movie
+        self.play = tool_button("media-playback-pause", "Play / pause (K)",
+                                lambda: movie.setPaused(movie.state() == QMovie.Running))
+        movie.stateChanged.connect(lambda state: self.play.setIcon(QIcon.fromTheme(
+            "media-playback-pause" if state == QMovie.Running else "media-playback-start")))
+        self.frame_label = QLabel()
+        numbers = self.frame_label.font()
+        numbers.setFeature(QFont.Tag("tnum"), 1)  # equal-width digits: the counter doesn't wobble
+        self.frame_label.setFont(numbers)
+        self.frame_label.setEnabled(False)
+        self.timeline = SeekSlider(Qt.Horizontal, maximum=max(movie.frameCount() - 1, 0))
+        self.timeline.sliderMoved.connect(self.seek_frame)
+        if movie.frameCount() <= 1:  # some formats don't say how many frames they have
+            self.timeline.hide()  # never setVisible(True) here: a widget without a parent yet becomes a window
+
+        def show_frame(n):
+            if not self.timeline.isSliderDown():
+                self.timeline.setValue(n)
+            self.frame_label.setText(f"{n + 1} / {movie.frameCount()}" if movie.frameCount() > 0 else "")
+        movie.frameChanged.connect(show_frame)
+        show_frame(movie.currentFrameNumber())
+        self.speed = speed_button(lambda rate: movie.setSpeed(round(rate * 100)))
+        QShortcut("K", self, self.play.click)
+        bar = QHBoxLayout()
+        bar.setSpacing(8)
+        bar.addWidget(Tray(self.play))
+        bar.addWidget(self.timeline, 1)
+        bar.addWidget(self.frame_label)
+        if self.timeline.isHidden():
+            bar.addStretch()
+        bar.addWidget(Tray(self.speed))
+        for w in (self.play, self.timeline, self.speed):
+            w.setFocusPolicy(Qt.NoFocus)  # Space and the arrows keep flipping files
+        return bar
+
+    def seek_frame(self, n):
+        """GIFs can't jump straight to a frame: start over and step forward to it, then keep the play state."""
+        movie = self.movie
+        if movie.jumpToFrame(n):
+            return
+        paused = movie.state() != QMovie.Running
+        if n < movie.currentFrameNumber():
+            movie.stop()
+            movie.start()
+        movie.setPaused(True)
+        while movie.currentFrameNumber() < n and movie.jumpToNextFrame():
+            pass
+        movie.setPaused(paused)
 
     # ---- picking a subject: click what to keep, Shift+click adds, Ctrl+click removes
 
@@ -1256,6 +1399,7 @@ class ImagePane(QWidget):
         self.brush_tray.setVisible(on)
         self.view.show_brush()
         if not on:
+            self.stop_scan()
             self.clear_subject()
             self.pending.clear()
             self.history = []
@@ -1266,12 +1410,14 @@ class ImagePane(QWidget):
         elif not self.ticker.isActive():  # read the picture once
             self.subject_status.setText("Starting…")
             self.ticker.start()
+            self.start_scan()
             image, progress = self.image, self.progress
             in_background(lambda: run_catching(lambda: Segmenter(image, progress)), self, self.got_segmenter,
                           pool=_convert_pool)
 
     def got_segmenter(self, result):
         self.ticker.stop()
+        self.stop_scan()
         if isinstance(result, Exception):
             self.subject_status.setText(f"Subject picking failed: {str(result)[:100]}")
             return
@@ -1542,7 +1688,9 @@ class ImagePane(QWidget):
                       pool=_convert_pool)
 
     def start_scan(self):
-        """A soft band of the accent color sweeping down the picture while the model looks for text."""
+        """A soft band of the accent color sweeping down the picture while a model reads it."""
+        if self.scan:
+            return
         rect = QRectF(self.image.rect())
         band = rect.height() * 0.12
         glow = QLinearGradient(0, 0, 0, band)
@@ -1559,12 +1707,15 @@ class ImagePane(QWidget):
         self.scan.item = item
         self.scan.start()
 
-    def got_lines(self, lines):
-        self.ocr_ticker.stop()
+    def stop_scan(self):
         if self.scan:
             self.scan.stop()
             self.view.scene().removeItem(self.scan.item)
             self.scan = None
+
+    def got_lines(self, lines):
+        self.ocr_ticker.stop()
+        self.stop_scan()
         if isinstance(lines, Exception):
             self.ocr_status.setText(f"Text finding failed: {str(lines)[:100]}")
             return
@@ -2756,6 +2907,7 @@ class SheetView(QWidget):
 class ModelView(QWidget):
     """Rotatable 3D view with fly mode, wireframe, auto-spin, floor grid and model stats."""
     flying_changed = Signal(bool)
+    step_file = Signal(int)
     toggles = {"wireframe": False, "spin": False, "grid": True}  # stay as you left them across files
 
     def __init__(self, path):
@@ -2777,6 +2929,8 @@ class ModelView(QWidget):
         self.view.setSource(QUrl.fromLocalFile(str(qml)))
         self.flying = False
         self.view.rootObject().animationsReady.connect(self.show_animations)
+        self.view.installEventFilter(self)  # Q / E while flying: see eventFilter
+        self.view.rootObject().stepFile.connect(self.step_file)
         in_background(lambda: animated_scene(Path(path)), self, self.load_scene)
 
         self.stats = QLabel()
@@ -2839,9 +2993,22 @@ class ModelView(QWidget):
         self.set_flying(False)
         QMetaObject.invokeMethod(self.view.rootObject(), "fit")
 
+    def eventFilter(self, obj, event):
+        """Hold E to rise, Q to sink while flying; the QML moves the camera every frame."""
+        if (obj is self.view and self.flying and event.type() in (QEvent.KeyPress, QEvent.KeyRelease)
+                and not event.isAutoRepeat()):
+            root = self.view.rootObject()
+            root.setProperty("fast", bool(event.modifiers() & Qt.ShiftModifier))
+            if event.key() in (Qt.Key_Q, Qt.Key_E):
+                pressed = event.type() == QEvent.KeyPress
+                root.setProperty("lift", (1 if event.key() == Qt.Key_E else -1) if pressed else 0)
+                return True
+        return False
+
     def set_flying(self, on):
         self.flying = on
         self.fly_button.setChecked(on)
+        self.view.rootObject().setProperty("lift", 0)
         self.view.rootObject().setProperty("flying", on)
         self.quick.setFocusPolicy(Qt.StrongFocus if on else Qt.NoFocus)
         if on:
@@ -3021,13 +3188,7 @@ class MediaPane(QWidget):
         bar.addWidget(self.total)
         player.setPlaybackRate(1.0)  # each file starts at normal speed
         if not isinstance(content, AudioView):
-            self.speed = QToolButton(text="1×", toolTip="Playback speed", autoRaise=True,
-                                     popupMode=QToolButton.InstantPopup)
-            menu = QMenu(self.speed)
-            for rate in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
-                menu.addAction(f"{rate:g}×", lambda r=rate: (player.setPlaybackRate(r),
-                                                            self.speed.setText(f"{r:g}×")))
-            self.speed.setMenu(menu)
+            self.speed = speed_button(player.setPlaybackRate)
             bar.addWidget(Tray(self.speed))
         sound = Tray(self.mute, self.volume)
         sound.layout().setContentsMargins(3, 3, 9, 3)  # room for the handle at 100%
@@ -3108,8 +3269,29 @@ class Waveform(QWidget):
         self.peaks = None
         self.setMinimumHeight(120)
         self.setCursor(Qt.PointingHandCursor)
-        player.positionChanged.connect(self.update)
+        # The player reports its position only every few tenths of a second: in between, the playhead
+        # moves on by the clock, redrawn every frame, so it glides instead of jumping.
+        self.clock = QElapsedTimer()
+        self.clock.start()
+        self.known = 0
+        player.positionChanged.connect(self.got_position)
+        self.frames = QTimer(self, interval=16, timeout=self.update)
+        player.playbackStateChanged.connect(self.follow_playback)  # a method: Qt disconnects it with the widget
+        self.follow_playback()
         in_background(lambda: audio_peaks(path), self, self.got_peaks)
+
+    def follow_playback(self, *_):
+        self.frames.start() if self.player.isPlaying() else self.frames.stop()
+
+    def got_position(self, ms):
+        self.known = ms
+        self.clock.restart()
+        self.update()
+
+    def position(self):
+        if not self.player.isPlaying():
+            return self.known
+        return min(self.known + self.clock.elapsed() * self.player.playbackRate(), self.player.duration())
 
     def got_peaks(self, peaks):
         self.peaks = peaks
@@ -3124,12 +3306,16 @@ class Waveform(QWidget):
         rest.setAlphaF(0.3)
         bars = max(self.width() // 3, 1)  # 2 px bar + 1 px gap
         duration = self.player.duration()
-        head = self.player.position() / duration * self.width() if duration else 0
+        head = self.position() / duration * self.width() if duration else 0
         middle = self.height() / 2
+        shape = QPainterPath()
         for i in range(bars):
             level = self.peaks[i * len(self.peaks) // bars]
             half = max(level * middle, 1)
-            p.fillRect(QRectF(i * 3, middle - half, 2, half * 2), played if i * 3 < head else rest)
+            shape.addRect(QRectF(i * 3, middle - half, 2, half * 2))
+        p.fillPath(shape, rest)
+        p.setClipRect(QRectF(0, 0, head, self.height()))  # the played part, cut mid-bar: no 3 px jumps
+        p.fillPath(shape, played)
 
     def mousePressEvent(self, event):
         self.mouseMoveEvent(event)
@@ -4286,6 +4472,8 @@ class Peek(QWidget):
         self.panel_button.clicked.connect(self.toggle_side)
         self.panel_tray = Tray(self.panel_button)
         self.panel_tray.setParent(self)  # floats in the top right corner: see resizeEvent
+        self.arrows = (NavArrow(self, "go-previous", "Previous file (←)", lambda: self.step(-1)),
+                       NavArrow(self, "go-next", "Next file (→)", lambda: self.step(1)))  # see place_arrows
         bar = QHBoxLayout()
         bar.setSpacing(8)
         bar.addWidget(self.drag_icon)
@@ -4336,6 +4524,17 @@ class Peek(QWidget):
         self.panel_tray.move(self.width() - margins.right() - self.panel_tray.width(), margins.top())
         self.panel_tray.raise_()
         self.panel_top.setContentsMargins(6, self.panel_tray.height() + 6, 0, 0)
+
+    def place_arrows(self):
+        """On the left and right edges of the preview, halfway down."""
+        area = self.preview.geometry()
+        left, right = self.arrows
+        y = area.center().y() - left.height() // 2
+        left.move(area.left(), y)
+        right.move(area.right() - right.width() + 1, y)
+        for arrow in self.arrows:  # a 3D view draws its own: these would sit hidden behind it
+            arrow.setVisible(len(self.files) > 1 and not isinstance(self.preview, ModelView))
+            arrow.raise_()
 
     def side_open(self):
         return not self.side_box.isHidden()  # isVisible() would say False while the window is hidden
@@ -4519,12 +4718,15 @@ class Peek(QWidget):
                 w.setFocusPolicy(Qt.NoFocus)
         if isinstance(new, ModelView):
             new.flying_changed.connect(self.update_shortcuts)
+            new.step_file.connect(self.step)
+            new.view.rootObject().setProperty("canStep", len(self.files) > 1)
         if isinstance(new, DocView):
             new.editing_changed.connect(self.update_shortcuts)
         self.layout_.replaceWidget(self.preview, new)
         self.preview.deleteLater()
         self.preview = new
         self.panel_tray.raise_()  # the new preview was stacked on top of it
+        self.place_arrows()
         self.setFocus()
         self.update_shortcuts()
 
@@ -4534,6 +4736,8 @@ class Peek(QWidget):
 
     def eventFilter(self, obj, event):
         """Right-click anywhere in the preview: the file menu. Text views keep their Copy / Select All on top."""
+        if obj is self.preview and event.type() in (QEvent.Resize, QEvent.Move):
+            self.place_arrows()  # the side panel opened or closed, or the window resized
         if (event.type() != QEvent.ContextMenu or not isinstance(obj, QWidget) or obj.window() is not self
                 or isinstance(obj, QLineEdit) or self.panel.isAncestorOf(obj)
                 or isinstance(self.preview, ModelView) and self.preview.flying):
