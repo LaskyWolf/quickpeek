@@ -1134,6 +1134,26 @@ class ImagePane(QWidget):
         if self.subject_button.isChecked():
             self.subject_status.setText(self.HINT)
             self.next_pick()
+        # Meanwhile the edge model studies the picture; the outline sharpens when it's done
+        image, progress = self.image, self.progress
+        progress.text = "Clicks work now · sharpening the edges…"
+        self.ticker.start()
+        in_background(lambda: run_catching(lambda: upscale_array(matte(image, progress), image.height(),
+                                                                 image.width())),
+                      self, self.got_edges, pool=_convert_pool)
+
+    def got_edges(self, result):
+        self.ticker.stop()
+        self.progress.text = ""
+        if isinstance(result, Exception):
+            self.subject_status.setText(f"Edge sharpening failed, outlines stay rougher: {str(result)[:80]}")
+            return
+        self.segmenter.edges = result
+        if self.subject_button.isChecked():
+            self.subject_status.setText(self.HINT)
+            if self.parts:
+                self.pending.append((0, 0, "reach", 0))  # redraw the current pick with sharp edges
+                self.next_pick()
 
     def picked(self, point, modifiers):
         if not self.subject_button.isChecked():
@@ -1204,6 +1224,8 @@ class ImagePane(QWidget):
             reach = max(4, round(max(width, height) / 128))  # about 2 of the model's 256 px pixels
             inside = tidy(snap_to_edges(logits + bias > 0, segmenter.guide, reach), seeds)
             mask = feather(inside, max(1, round(max(width, height) / 1200)))
+            if segmenter.edges is not None:
+                mask = sharpen(inside, mask, segmenter.edges, reach, bias)
             return parts, logits, mask, subject_layers(mask), mode
 
         in_background(lambda: run_catching(work), self, self.show_subject, pool=_convert_pool)
@@ -2994,13 +3016,16 @@ def details_html(sections):
 
 MODELS_DIR = Path.home() / ".local/share/peek/models"  # not in the cache: cleanup must never delete these
 AI_MODELS = {  # name: (file, url, size in bytes) -- downloaded the first time a tool is used
-    # Segment Anything (ViT-B, quantized): the encoder reads a picture once, the decoder turns each click into a mask
-    "sam_encoder": ("vit_b-encoder-quant.onnx",
-                    "https://github.com/danielgatis/rembg/releases/download/v0.0.0/vit_b-encoder-quant.onnx",
-                    99827815),
-    "sam_decoder": ("vit_b-decoder-quant.onnx",
-                    "https://github.com/danielgatis/rembg/releases/download/v0.0.0/vit_b-decoder-quant.onnx",
-                    8742591),
+    # Segment Anything 2.1 (Hiera Base+), zipped: the encoder reads a picture once, the decoder turns each
+    # click into a mask. Unpacked by sam2_files.
+    "sam2": ("sam2.1_hiera_base_plus_20260221.zip",
+             "https://huggingface.co/vietanhdev/segment-anything-2.1-onnx-models/resolve/main/"
+             "sam2.1_hiera_base_plus_20260221.zip",
+             271998747),
+    # BiRefNet retrained on anime and illustrations (ToonOut): outlines of drawn subjects
+    "toonout": ("birefnet-toonout.onnx",
+                "https://huggingface.co/sprited/birefnet-toonout-onnx/resolve/main/birefnet-toonout.onnx",
+                974344828),
     "birefnet": ("BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
                  "https://github.com/danielgatis/rembg/releases/download/v0.0.0/"
                  "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
@@ -3036,36 +3061,102 @@ def ensure_model(name, progress):
         return path
 
 
-_birefnet = None
+SAM2_FILES = ("sam2.1_hiera_base_plus.encoder.onnx", "sam2.1_hiera_base_plus.decoder.onnx")
+_unpack_lock = threading.Lock()
+_sessions = {}  # model path: its ONNX Runtime session, kept for the next picture
+
+
+def sam2_files(progress):
+    """Paths of the Segment Anything 2.1 encoder and decoder, downloaded and unpacked once. Worker thread."""
+    paths = [MODELS_DIR / name for name in SAM2_FILES]
+    with _unpack_lock:
+        if not all(path.exists() for path in paths):
+            archive = ensure_model("sam2", progress)
+            progress.text = "Unpacking the AI model, once…"
+            with zipfile.ZipFile(archive) as zipped:
+                for path in paths:
+                    part = path.with_name(path.name + ".part")  # renamed when complete, like downloads
+                    with zipped.open(path.name) as src, open(part, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                    part.rename(path)
+            archive.unlink()  # unpacked: the archive is not needed any more
+    return paths
+
+
+def session(path, keep=True):
+    """An ONNX Runtime session for a model file. `keep`: cached for the next picture."""
+    import onnxruntime
+    if path in _sessions:
+        return _sessions[path]
+    options = onnxruntime.SessionOptions()
+    options.enable_cpu_mem_arena = False  # give memory back after each run: peek stays open between previews
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")  # no busy-waiting when idle
+    options.intra_op_num_threads = max(1, (os.cpu_count() or 2) // 2)  # half the cores: the PC stays responsive
+    model = onnxruntime.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
+    if keep:
+        _sessions[path] = model
+    return model
+
+
+def free_ai_memory():
+    """Unload the AI models and hand freed memory back to the system: peek stays running hidden."""
+    import ctypes
+    import gc
+    _sessions.clear()
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)  # glibc keeps freed big blocks for itself otherwise
+    except (OSError, AttributeError):
+        pass
+
+
+def model_pixels(image, width, height):
+    """`image` squeezed to width×height, as the 1×3×H×W float array these models read (ImageNet colours)."""
+    import numpy as np
+    small = image.convertToFormat(QImage.Format_RGB888).scaled(width, height, Qt.IgnoreAspectRatio,
+                                                                Qt.SmoothTransformation)
+    rows = np.frombuffer(small.constBits(), np.uint8).reshape(height, small.bytesPerLine())
+    pixels = rows[:, :width * 3].reshape(height, width, 3).astype(np.float32) / 255
+    pixels = (pixels - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
+    return pixels.transpose(2, 0, 1)[None]
+
+
+def looks_drawn(image):
+    """True for drawings and illustrations: large areas of flat or smoothly shaded colour. Photos have grain,
+    so neighbouring pixels almost always differ."""
+    # ponytail: one brightness statistic; a very clean photo (studio, heavy denoise) passes as a drawing.
+    # Upgrade path: a small classifier model if that ever picks the wrong edge model.
+    import numpy as np
+    gray = image.convertToFormat(QImage.Format_Grayscale8).scaled(512, 512, Qt.KeepAspectRatio,
+                                                                  Qt.FastTransformation)  # no smoothing: keeps grain
+    a = np.frombuffer(gray.constBits(), np.uint8).reshape(gray.height(), gray.bytesPerLine())[:, :gray.width()]
+    a = a.astype(np.int16)
+    dx, dy = np.abs(np.diff(a, axis=1))[:-1], np.abs(np.diff(a, axis=0))[:, :-1]
+    return ((dx <= 1) & (dy <= 1)).mean() > 0.45
+
+
+def matte(image, progress):
+    """How sure the edge model is that each pixel belongs to the main subject, 0..1, at 1024×1024.
+    ToonOut for drawings, BiRefNet for photos. Worker thread."""
+    import numpy as np
+    name = "toonout" if looks_drawn(image) else "birefnet"
+    model = session(ensure_model(name, progress), keep=False)  # up to 1 GB: loaded per picture, then freed
+    progress.text = "Finding the edges…"
+    out = model.run(None, {model.get_inputs()[0].name: model_pixels(image, 1024, 1024)})[0][0, 0]
+    if out.min() < 0 or out.max() > 1:
+        out = 1 / (1 + np.exp(-out))  # log-odds (BiRefNet) to 0..1; ToonOut answers in 0..1 already
+    return (out - out.min()) / (out.max() - out.min() + 1e-8)  # 0 = background, 1 = subject
 
 
 def remove_background(image, progress):
-    """The image with everything but the main subject made transparent (BiRefNet model:
-    trained on photos and drawings alike, with sharp edges). Worker thread."""
-    global _birefnet
+    """The image with everything but the main subject made transparent. Worker thread."""
     import numpy as np  # imported here: these load slowly, and most previews never need them
-    import onnxruntime
-    model = ensure_model("birefnet", progress)
-    progress.text = "Finding the subject…"
-    if _birefnet is None:
-        _birefnet = onnxruntime.InferenceSession(str(model), providers=["CPUExecutionProvider"])
-    side = 1024  # the model's input size
-    small = image.convertToFormat(QImage.Format_RGB888).scaled(side, side, Qt.IgnoreAspectRatio,
-                                                                Qt.SmoothTransformation)
-    rows = np.frombuffer(small.constBits(), np.uint8).reshape(side, small.bytesPerLine())
-    pixels = rows[:, :side * 3].reshape(side, side, 3).astype(np.float32) / 255
-    pixels = (pixels - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)
-    logits = _birefnet.run(None, {_birefnet.get_inputs()[0].name: pixels.transpose(2, 0, 1)[None]})[0][0, 0]
-    mask = 1 / (1 + np.exp(-logits))  # the model answers in log-odds; this turns them into 0..1
-    mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8)  # 0 = background, 1 = subject
-    alpha = QImage((mask * 255).astype(np.uint8).tobytes(), side, side, side, QImage.Format_Grayscale8)
+    mask = matte(image, progress)
+    alpha = QImage((mask * 255).astype(np.uint8).tobytes(), 1024, 1024, 1024, QImage.Format_Grayscale8)
     alpha = alpha.scaled(image.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
     result = image.convertToFormat(QImage.Format_ARGB32)
     result.setAlphaChannel(alpha)
     return result
-
-
-_sam = None
 
 
 def upscale_array(a, height, width):
@@ -3082,35 +3173,26 @@ def upscale_array(a, height, width):
 
 
 class Segmenter:
-    """Segment Anything: reads a picture once (a few seconds), then turns a click into the mask
-    of the object under it (a tenth of a second). Worker threads."""
+    """Segment Anything 2.1: reads a picture once (a few seconds), then turns a click into the mask
+    of the object under it (a few hundredths of a second). Worker threads."""
 
     def __init__(self, image, progress):
-        global _sam
         import numpy as np
-        import onnxruntime
-        encoder, decoder = ensure_model("sam_encoder", progress), ensure_model("sam_decoder", progress)
+        encoder, decoder = (session(path) for path in sam2_files(progress))
         try:
             import scipy.ndimage  # noqa: F401  slow to load: here, not on the first click (see tidy)
         except ImportError:
             pass
         progress.text = "Looking at the picture…"
-        if _sam is None:
-            _sam = tuple(onnxruntime.InferenceSession(str(m), providers=["CPUExecutionProvider"])
-                         for m in (encoder, decoder))
+        self.decoder = decoder
         self.height, self.width = image.height(), image.width()
         gray = image.convertToFormat(QImage.Format_Grayscale8)
         rows = np.frombuffer(gray.constBits(), np.uint8).reshape(self.height, gray.bytesPerLine())
         self.guide = rows[:, :self.width].astype(np.float32) / 255  # full-size brightness, to snap outlines to
-        self.scale = 1024 / max(self.width, self.height)  # the model sees the picture at 1024 px, top-left aligned
-        self.w, self.h = int(self.width * self.scale + 0.5), int(self.height * self.scale + 0.5)
-        small = image.convertToFormat(QImage.Format_RGB888).scaled(self.w, self.h, Qt.IgnoreAspectRatio,
-                                                                    Qt.SmoothTransformation)
-        rows = np.frombuffer(small.constBits(), np.uint8).reshape(self.h, small.bytesPerLine())
-        pixels = rows[:, :self.w * 3].reshape(self.h, self.w, 3).astype(np.float32)
-        square = np.zeros((1024, 1024, 3), np.float32)
-        square[:self.h, :self.w] = (pixels - [123.675, 116.28, 103.53]) / [58.395, 57.12, 57.375]
-        self.embedding = _sam[0].run(None, {"x": square.transpose(2, 0, 1)[None]})[0]
+        self.edges = None  # the edge model's 0..1 map at full size, once ImagePane has it (see sharpen)
+        # The model sees the picture squeezed into 1024×1024; its masks cover that same square at 256 px
+        names = [output.name for output in encoder.get_outputs()]
+        self.features = dict(zip(names, encoder.run(None, {"image": model_pixels(image, 1024, 1024)})))
 
     def part(self, points, labels, previous=None, box=None):
         """One picked object: the clicks on it (label 1 = keep here, 0 = not here) and how sure the model is
@@ -3118,26 +3200,44 @@ class Segmenter:
         this click, so a "not here" click reshapes it instead of starting over. `box` (x0, y0, x1, y1):
         the brush, only what's inside it."""
         import numpy as np
-        # The box is two more points: label 2 = top-left corner, 3 = bottom-right. Without one the model
-        # wants a padding point labelled -1.
-        corners, kinds = (list(zip(box[::2], box[1::2])), [2, 3]) if box else ([(0, 0)], [-1])
-        _, _, low = _sam[1].run(None, {
-            "image_embeddings": self.embedding,
-            "point_coords": np.array([[(x * self.scale, y * self.scale) for x, y in [*points, *corners]]],
-                                     np.float32),
+        corners, kinds = (list(zip(box[::2], box[1::2])), [2, 3]) if box else ([], [])  # 2, 3: box corners
+        sx, sy = 1024 / self.width, 1024 / self.height
+        masks, scores = self.decoder.run(None, {
+            **self.features,
+            "point_coords": np.array([[(x * sx, y * sy) for x, y in [*points, *corners]]], np.float32),
             "point_labels": np.array([[*labels, *kinds]], np.float32),
             "mask_input": previous["low"] if previous else np.zeros((1, 1, 256, 256), np.float32),
-            "has_mask_input": np.ones(1, np.float32) if previous else np.zeros(1, np.float32),
-            "orig_im_size": np.array([self.height, self.width], np.float32)})
-        # The decoder's own full-size mask is resized wrongly (squashed, or empty on portrait pictures).
-        # Its 256 px mask covers the 1024 square instead: crop the picture's part and resize it here.
-        logits = upscale_array(low[0, 0, :round(self.h / 4), :round(self.w / 4)], self.height, self.width)
+            "has_mask_input": np.ones(1, np.float32) if previous else np.zeros(1, np.float32)})
+        scores = scores[0]
+        if len(points) == 1 and not previous and not box:
+            # One plain click: the model offers a small part, a part and the whole object. Take the biggest
+            # one it is still fairly sure of: a click on a body usually means the whole figure.
+            good = [i for i in range(len(scores)) if scores[i] >= scores.max() - 0.2]
+            best = max(good, key=lambda i: (masks[0, i] > 0).sum())
+        else:
+            best = int(scores.argmax())
+        low = masks[:, best:best + 1]
+        logits = upscale_array(low[0, 0], self.height, self.width)
         if box:
             x0, y0, x1, y1 = box
             inside = logits[y0:y1, x0:x1].copy()
             logits[:] = -20  # surely outside
             logits[y0:y1, x0:x1] = inside
         return {"points": points, "labels": labels, "low": low, "logits": logits, "box": box}
+
+
+def sharpen(inside, mask, edges, radius, bias):
+    """`mask` with its outline redrawn by the edge model where the two agree. The edge model draws at
+    1024 px with soft hair and fur; Segment Anything at 256 px. Where the edge model disagrees (it only
+    knows "main subject", so e.g. a picked pond is background to it) the selection's own outline stays.
+    `bias` is the Less/More slider (-8..8): it moves how sure the edge model must be."""
+    import numpy as np
+    near = box(inside.astype(np.float32), radius)
+    band = (near > 0) & (near < 1)  # within `radius` of the outline
+    agree = box(((edges > 0.5) == inside).astype(np.float32), 2 * radius) > 0.8
+    middle = 0.5 - bias / 8 * 0.4  # More: also keep what the edge model is less sure of
+    edges = np.clip((edges - middle) / 0.9 + 0.5, 0, 1)  # its faintest guesses count as fully out: no haze
+    return np.where(band & agree, edges, mask)
 
 
 def merge_parts(parts):
@@ -3880,6 +3980,10 @@ class Peek(QWidget):
         self.settings.setValue("volume", self.player.audioOutput().volume())
         event.ignore()
         self.hide()
+        if isinstance(self.preview, ImagePane) and self.preview.segmenter:
+            self.preview.subject_button.setChecked(False)  # lets go of the pick and its history
+            self.preview.segmenter = None
+            free_ai_memory()
         self.player.stop()
         self.player.setSource(QUrl())
         if self.converter.state() != QProcess.NotRunning:

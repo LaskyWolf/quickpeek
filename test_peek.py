@@ -485,7 +485,7 @@ if np is not None:
     assert (peek.tidy(snapped, [(200, 150)]) != truth).sum() == 0
 
 models = peek.MODELS_DIR
-if peek.has_onnx() and all((models / peek.AI_MODELS[m][0]).exists() for m in ("sam_encoder", "sam_decoder")):
+if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES):
     art = QImage(1200, 800, QImage.Format_RGB32)
     art.fill(QColor("#7aa6d8"))
     p = QPainter(art)
@@ -504,6 +504,8 @@ if peek.has_onnx() and all((models / peek.AI_MODELS[m][0]).exists() for m in ("s
     QTest.keyClick(w, Qt.Key_S)
     pane.picked(QPointF(400, 400), Qt.NoModifier)  # clicked before the picture is read: waits its turn
     assert wait(lambda: pane.mask is not None, 60000), pane.subject_status.text()
+    settled = lambda: pane.segmenter.edges is not None and not pane.busy and not pane.pending
+    assert wait(settled, 120000), pane.subject_status.text()  # the edge model sharpened the outline
     cut = pane.cutout()
     assert abs(cut.width() - 400) < 12 and abs(cut.height() - 400) < 12, cut.size()
     assert cut.pixelColor(5, 5).alpha() < 30 and cut.pixelColor(200, 200).alpha() > 240  # corner clear, middle kept
@@ -547,6 +549,7 @@ if peek.has_onnx() and all((models / peek.AI_MODELS[m][0]).exists() for m in ("s
     QTest.keyClick(w, Qt.Key_S)
     pane.picked(QPointF(600, 500), Qt.NoModifier)
     assert wait(lambda: pane.mask is not None, 60000)
+    assert wait(lambda: pane.segmenter.edges is not None and not pane.busy and not pane.pending, 120000)
     assert pane.mask[220, 600] > 0.5 and pane.mask[500, 600] > 0.5, "head and body picked together"
     pane.picked(QPointF(600, 200), Qt.ControlModifier)
     assert wait(lambda: pane.mask is not None and pane.mask[200, 600] < 0.5, 10000), "the head is cut away"
