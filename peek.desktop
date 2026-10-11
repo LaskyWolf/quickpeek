@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Service
+MimeType=all/allfiles;
+Actions=peek;
+
+[Desktop Action peek]
+Name=Quick Preview
+Icon=view-preview
+Exec=peek %f
