@@ -1,4 +1,4 @@
-"""Self-check for peek. Run: QT_QPA_PLATFORM=offscreen python3 test_peek.py"""
+"""Self-check for quickpeek. Run: QT_QPA_PLATFORM=offscreen python3 test_quickpeek.py"""
 import importlib.util
 import os
 import shutil
@@ -18,7 +18,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QGraphicsView, QToolButton, QLabel, QPlainTextEdit, QApplication
 
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()  # window size settings go to a throwaway folder
-import peek
+import quickpeek
 
 app = QApplication([])
 QLocale.setDefault(QLocale(QLocale.Italian, QLocale.Italy))  # fixed locale: results don't depend on the machine
@@ -41,8 +41,8 @@ for page in range(3):
 painter.end()
 
 # Arrow keys flip files in Dolphin's order; Space closes
-assert [p.name for p in peek.siblings(d / "notes.txt")] == ["doc.pdf", "img2.png", "img10.png", "notes.txt"]
-w = peek.Peek(d / "img2.png")
+assert [p.name for p in quickpeek.siblings(d / "notes.txt")] == ["doc.pdf", "img2.png", "img10.png", "notes.txt"]
+w = quickpeek.QuickPeek(d / "img2.png")
 w.show()
 QTest.qWaitForWindowActive(w)
 seen = [w.windowTitle()]
@@ -56,7 +56,7 @@ assert seen == ["img2.png", "img10.png", "notes.txt", "doc.pdf", "notes.txt", "i
 w.step(-2)
 QTest.qWait(300)
 doc = w.preview
-assert isinstance(doc, peek.DocView) and doc.page_label.text() == "Page 1 of 3", doc.page_label.text()
+assert isinstance(doc, quickpeek.DocView) and doc.page_label.text() == "Page 1 of 3", doc.page_label.text()
 assert doc.thumbs.count() == 3 and not doc.thumbs.item(2).icon().isNull(), "thumbnails rendered"
 QTest.keyClick(w, Qt.Key_PageDown)
 QTest.qWait(200)
@@ -77,13 +77,13 @@ cases = [
     (None, "General", ""),
 ]
 for value, fmt, want in cases:
-    got = peek.format_cell(value, fmt)
+    got = quickpeek.format_cell(value, fmt)
     assert got == want, (value, fmt, got, want)
 
 # Spreadsheet grid: styles, merged cells, formula bar (needs openpyxl)
-if peek.openpyxl:
+if quickpeek.openpyxl:
     from openpyxl.styles import Font
-    wb = peek.openpyxl.Workbook()
+    wb = quickpeek.openpyxl.Workbook()
     ws = wb.active
     ws.title = "Budget"
     ws["A1"], ws["B1"], ws["B2"], ws["B3"] = "Tech", 2490, 100, "=SUM(B1:B2)"
@@ -93,12 +93,12 @@ if peek.openpyxl:
     ws.row_dimensions[4].hidden = True
     wb.create_sheet("Other")
     wb.save(d / "budget.xlsx")
-    w = peek.Peek(d / "budget.xlsx")
+    w = quickpeek.QuickPeek(d / "budget.xlsx")
     w.show()
     QTest.qWaitForWindowActive(w)
     sheet = w.preview
     table = sheet.tabs.widget(0)
-    assert isinstance(sheet, peek.SheetView) and sheet.tabs.count() == 2 and sheet.tabs.tabText(0) == "Budget"
+    assert isinstance(sheet, quickpeek.SheetView) and sheet.tabs.count() == 2 and sheet.tabs.tabText(0) == "Budget"
     assert table.horizontalHeaderItem(1).text() == "B" and table.item(0, 1).text() == "2.490,00 €"
     assert table.item(0, 0).font().bold() and table.columnSpan(4, 0) == 3
     assert table.isRowHidden(3)
@@ -135,7 +135,7 @@ def wait(predicate, ms=5000):
 
 
 # Closing hides the window and frees the preview; reopening reuses the same window
-w = peek.Peek(d / "notes.txt")
+w = quickpeek.QuickPeek(d / "notes.txt")
 w.show()
 QTest.qWaitForWindowActive(w)
 w.close()
@@ -162,7 +162,7 @@ assert w.isVisible() and not doc.search.isVisible() and doc.search_model.rowCoun
 (d / "app.py").write_text("def hello():\n    return 42\n")
 (d / "readme.md").write_text("# Title\n\nSome **bold** text\n")
 code = show("app.py")
-if peek.highlight:
+if quickpeek.highlight:
     assert "<span" in code.editor.toHtml() and "color" in code.editor.toHtml(), "code colors"
 else:
     print("skipped code colors: pygments not installed")
@@ -179,24 +179,24 @@ with tarfile.open(d / "pack.tar.gz", "w:gz") as t:
     t.add(d / "notes.txt", "inner/notes.txt")
 for name, files in (("pack.zip", 2), ("pack.tar.gz", 1)):
     arc = show(name)
-    assert isinstance(arc, peek.ArchiveView), (name, type(arc))
+    assert isinstance(arc, quickpeek.ArchiveView), (name, type(arc))
     assert wait(lambda: arc.summary.text().startswith(f"{files} files")), arc.summary.text()
-assert [e[0] for e in peek.list_archive(d / "pack.zip")] == ["docs/a.txt", "b.txt"]
+assert [e[0] for e in quickpeek.list_archive(d / "pack.zip")] == ["docs/a.txt", "b.txt"]
 
 # Fonts: a system font file renders a sample
 font_file = next(iter(sorted(Path("/usr/share/fonts").rglob("*.ttf"))), None)
 if font_file:
     (d / "sample.ttf").write_bytes(font_file.read_bytes())
-    assert isinstance(show("sample.ttf"), peek.FontView)
+    assert isinstance(show("sample.ttf"), quickpeek.FontView)
     (d / "sample.ttf").unlink()
 
 # Folders: icon grid, background size count, activating an item opens it
 (d / "sub").mkdir()
 (d / "sub" / "x.txt").write_text("12345")
 folder = show("sub")
-assert isinstance(folder, peek.FolderView)
+assert isinstance(folder, quickpeek.FolderView)
 assert wait(lambda: "1 files" in folder.summary.text()), folder.summary.text()
-grid = folder.findChild(peek.QListWidget)
+grid = folder.findChild(quickpeek.QListWidget)
 grid.itemActivated.emit(grid.item(0))
 QTest.qWait(100)
 assert w.windowTitle() == "x.txt", w.windowTitle()
@@ -206,7 +206,7 @@ big = QImage(400, 300, QImage.Format_RGB32)
 big.fill(Qt.blue)
 big.save(str(d / "img2.png"))
 pane = show("img2.png")
-assert isinstance(pane, peek.ImagePane)
+assert isinstance(pane, quickpeek.ImagePane)
 assert set(p.name for p in w.preloaded) >= {"img10.png"}, w.preloaded
 QTest.keyClick(w, Qt.Key_1)
 assert pane.view.transform().m11() == 1.0 and pane.zoom_label.text() == "100%"
@@ -216,18 +216,18 @@ QTest.keyClick(w, Qt.Key_I)  # side panel: details read in the background, then 
 assert w.panel.isVisible() and w.panel_button.isChecked()
 assert wait(lambda: "400 × 300" in w.panel.details.text()), w.panel.details.text()
 assert "Permissions" in w.panel.details.text()
-assert "JPG" in [b.text() for b in w.panel.findChildren(peek.QPushButton)]
+assert "JPG" in [b.text() for b in w.panel.findChildren(quickpeek.QPushButton)]
 tray = w.panel_tray.geometry()
 assert tray.right() <= w.width() and tray.top() < 30, tray  # floats in the top right corner
 assert not w.panel.thumb.geometry().translated(w.panel.mapTo(w, w.panel.rect().topLeft())).intersects(tray)
 QTest.keyClick(w, Qt.Key_C)  # C closes it too
 assert not w.panel.isVisible() and not w.panel_button.isChecked()
 QTest.keyClick(w, Qt.Key_Right)  # preloaded neighbour
-assert w.windowTitle() == "img10.png" and isinstance(w.preview, peek.ImagePane)
+assert w.windowTitle() == "img10.png" and isinstance(w.preview, quickpeek.ImagePane)
 
 # Text: T finds each line, a click shows its paragraph in a popup, Ctrl+F highlights a match
-models = Path.home() / ".local/share/peek/models"
-if peek.has_onnx() and all((models / peek.AI_MODELS[n][0]).exists() for n in ("ocr_det", "ocr_rec", "ocr_dict")):
+models = quickpeek.MODELS_DIR
+if quickpeek.has_onnx() and all((models / quickpeek.AI_MODELS[n][0]).exists() for n in ("ocr_det", "ocr_rec", "ocr_dict")):
     from PySide6.QtGui import QFont
     page = QImage(900, 260, QImage.Format_RGB32)
     page.fill(Qt.white)
@@ -264,11 +264,11 @@ if peek.has_onnx() and all((models / peek.AI_MODELS[n][0]).exists() for n in ("o
     pane.search.close_bar()
     QTest.keyClick(w, Qt.Key_Escape)  # leaves text mode, keeps the window
     assert not pane.text_button.isChecked() and w.isVisible()
-    assert peek.ocr_lines(page, peek.cache_key(d / "words.png"))[0][0] == "Quick previews"  # second time: from cache
+    assert quickpeek.ocr_lines(page, quickpeek.cache_key(d / "words.png"))[0][0] == "Quick previews"  # second time: from cache
     show("img10.png")
 else:
     print("skipped text finding: onnxruntime or the PaddleOCR models are missing")
-assert peek.join_words([("Summer", (0, 0, 100, 40)), ("2026", (130, 2, 80, 40))]) == [("Summer 2026", (0, 0, 210, 42))]
+assert quickpeek.join_words([("Summer", (0, 0, 100, 40)), ("2026", (130, 2, 80, 40))]) == [("Summer 2026", (0, 0, 210, 42))]
 
 # GIF: a timeline that seeks both ways, and the speed menu; side arrows flip files
 if shutil.which("ffmpeg"):
@@ -305,9 +305,9 @@ assert w.drag_icon.path == d / "img10.png" and not w.drag_icon.pixmap().isNull()
 # 3D stats from headers
 stl = d / "tri.stl"
 stl.write_bytes(b"\0" * 80 + struct.pack("<I", 2) + b"\0" * 100)
-assert peek.model_stats(stl) == "2 triangles", peek.model_stats(stl)
+assert quickpeek.model_stats(stl) == "2 triangles", quickpeek.model_stats(stl)
 (d / "m.obj").write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nv 1 1 0\nf 1 2 3 4\n")
-assert peek.model_stats(d / "m.obj") == "4 vertices  ·  2 triangles", peek.model_stats(d / "m.obj")
+assert quickpeek.model_stats(d / "m.obj") == "4 vertices  ·  2 triangles", quickpeek.model_stats(d / "m.obj")
 for f in (stl, d / "m.obj"):
     f.unlink()
 
@@ -318,34 +318,34 @@ with zipfile.ZipFile(d / "art.krz", "w") as z:
     QImage(40, 30, QImage.Format_RGB32).save(buffer, "PNG")
     z.writestr("mimetype", "application/x-krita")
     z.writestr("preview.png", bytes(buffer.data()))
-art = peek.preview_widget(str(d / "art.krz"), QMimeDatabase().mimeTypeForFile(str(d / "art.krz")), None)
-assert isinstance(art, peek.ImagePane) and art.image.size() == QSize(40, 30), type(art)
-if peek.krita_command():
-    assert peek.conversion(d / "art.krz")[2].suffix == ".png"
+art = quickpeek.preview_widget(str(d / "art.krz"), QMimeDatabase().mimeTypeForFile(str(d / "art.krz")), None)
+assert isinstance(art, quickpeek.ImagePane) and art.image.size() == QSize(40, 30), type(art)
+if quickpeek.krita_command():
+    assert quickpeek.conversion(d / "art.krz")[2].suffix == ".png"
 (d / "art.krz").unlink()
 
 # Dolphin sort order from the folder's .directory: by size, descending, folders first
 (d / ".directory").write_text("[Dolphin]\nSortRole=size\nSortOrder=1\nVersion=4\n")
-order = [p.name for p in peek.siblings(d / "notes.txt")]
+order = [p.name for p in quickpeek.siblings(d / "notes.txt")]
 assert order[0] == "sub", order
 sizes = [(d / n).stat().st_size for n in order[1:]]
 assert sizes == sorted(sizes, reverse=True), order
 (d / ".directory").unlink()
 
 # Conversions write next to the original and never overwrite
-out = peek.convert_file(d / "img10.png", ".jpg")
+out = quickpeek.convert_file(d / "img10.png", ".jpg")
 assert out == d / "img10.jpg" and QImage(str(out)).width() == 50
-assert peek.convert_file(d / "img10.png", ".jpg") == d / "img10 (2).jpg"
-pdf = peek.convert_file(d / "img10.png", ".pdf")
+assert quickpeek.convert_file(d / "img10.png", ".jpg") == d / "img10 (2).jpg"
+pdf = quickpeek.convert_file(d / "img10.png", ".pdf")
 from PySide6.QtPdf import QPdfDocument
 check = QPdfDocument()
 check.load(str(pdf))
 assert check.pageCount() == 1
-assert peek.convert_file(d / "pack.zip", "/") == d / "pack" and (d / "pack/docs/a.txt").read_text() == "x" * 1000
-assert peek.text_to_document(d / "readme.md", ".html").read_text().count("<b>") or True
-assert {e for e, _ in peek.convert_targets(d / "doc.pdf")} >= {".pdf", ".png", ".docx"}
-assert peek.convert_targets(d / "sub") == []
-details = dict(peek.file_details(d / "notes.txt"))
+assert quickpeek.convert_file(d / "pack.zip", "/") == d / "pack" and (d / "pack/docs/a.txt").read_text() == "x" * 1000
+assert quickpeek.text_to_document(d / "readme.md", ".html").read_text().count("<b>") or True
+assert {e for e, _ in quickpeek.convert_targets(d / "doc.pdf")} >= {".pdf", ".png", ".docx"}
+assert quickpeek.convert_targets(d / "sub") == []
+details = dict(quickpeek.file_details(d / "notes.txt"))
 assert dict(details["Text"])["Line endings"] == "Linux (LF)", details
 assert "Type" not in dict(details["General"]), "the type is shown in the panel header, not repeated"
 for f in (out, d / "img10 (2).jpg", pdf):
@@ -353,23 +353,23 @@ for f in (out, d / "img10 (2).jpg", pdf):
 
 # Cache cap: oldest converted files go first, Qt's own cache folders stay
 cache = Path(tempfile.mkdtemp())
-peek.CACHE, limit = cache, peek.CACHE_LIMIT
-peek.CACHE_LIMIT = 250
+quickpeek.CACHE, limit = cache, quickpeek.CACHE_LIMIT
+quickpeek.CACHE_LIMIT = 250
 (cache / "qmlcache").mkdir()
 for i, name in enumerate(("old.pdf", "mid.glb", "new.pdf")):
     (cache / name).write_bytes(b"x" * 100)
     os.utime(cache / name, (i, i))
 (cache / "x.part.pdf").write_bytes(b"x")
-peek.prune_cache(clean_parts=True)
+quickpeek.prune_cache(clean_parts=True)
 assert sorted(p.name for p in cache.iterdir()) == ["mid.glb", "new.pdf", "qmlcache"], list(cache.iterdir())
-peek.CACHE_LIMIT = limit
-peek.CACHE = Path.home() / ".cache/peek"
+quickpeek.CACHE_LIMIT = limit
+quickpeek.CACHE = Path.home() / ".cache/quickpeek"
 
 # PDF editor: shapes, a highlight that snaps to words and text on page 2, saved as real annotations
-if peek.pymupdf:
+if quickpeek.pymupdf:
     before = (d / "doc.pdf").read_bytes()
     w.close()
-    w = peek.Peek(d / "doc.pdf")  # fresh window: offscreen Qt loses track of activation after hide/show
+    w = quickpeek.QuickPeek(d / "doc.pdf")  # fresh window: offscreen Qt loses track of activation after hide/show
     w.show()
     QTest.qWaitForWindowActive(w)
     doc = w.preview
@@ -389,7 +389,7 @@ if peek.pymupdf:
         QTest.mouseRelease(view, Qt.LeftButton, Qt.NoModifier, b)
 
     def on_page(x, y):  # PDF points on page 2 -> view pixels
-        return canvas.mapFromScene(canvas.pages[1].rect.topLeft() + QPointF(x, y) * peek.EDIT_SCALE)
+        return canvas.mapFromScene(canvas.pages[1].rect.topLeft() + QPointF(x, y) * quickpeek.EDIT_SCALE)
 
     drag(on_page(100, 200), on_page(200, 260))  # rectangle (the starting tool)
     QTest.keyClick(canvas, Qt.Key_P)
@@ -408,11 +408,11 @@ if peek.pymupdf:
     QTest.mouseRelease(view, Qt.LeftButton, Qt.NoModifier, b)
     canvas.pressure = None
     stroke = canvas.history[-1][1][0]
-    assert isinstance(stroke, peek.PressureStroke) and stroke.data(peek.PRESSURE) == [0.1, 0.5, 1.0]
+    assert isinstance(stroke, quickpeek.PressureStroke) and stroke.data(quickpeek.PRESSURE) == [0.1, 0.5, 1.0]
     widths = [a[4] for a in canvas.annotations() if a[1] == "pen"]
     assert len(widths) == 2 and widths[0] < widths[1], widths
     QTest.keyClick(canvas, Qt.Key_Z, Qt.ControlModifier)
-    assert peek.pressure_runs([(0, 0), (1, 0), (2, 0), (3, 0)], [0.5, 0.5, 1, 1], 2) == \
+    assert quickpeek.pressure_runs([(0, 0), (1, 0), (2, 0), (3, 0)], [0.5, 0.5, 1, 1], 2) == \
         [([(0, 0), (1, 0), (2, 0)], 2.0), ([(2, 0), (3, 0)], 4.0)]
     box, _ = canvas.words(1)[0]  # "page" of "page 2"; the drag reaches the "2"
     QTest.keyClick(canvas, Qt.Key_H)
@@ -426,12 +426,12 @@ if peek.pymupdf:
     QTest.keyClick(w, Qt.Key_Escape)  # ...left empty: it disappears
     QTest.qWait(20)
     assert doc.editing
-    kinds = sorted(item.data(peek.KIND) for item in canvas.drawings())
+    kinds = sorted(item.data(quickpeek.KIND) for item in canvas.drawings())
     assert kinds == ["highlight", "rect", "text"], kinds
     editor.save()
     assert wait(lambda: editor.status.text().startswith(("Saved", "Save failed")), 10000), editor.status.text()
     assert editor.status.text() == "Saved doc (edited).pdf", editor.status.text()
-    saved = peek.pymupdf.open(d / "doc (edited).pdf")
+    saved = quickpeek.pymupdf.open(d / "doc (edited).pdf")
     page2 = saved[1]  # keep the page alive: its annotations crash once it's freed
     annots = {a.type[1]: a for a in page2.annots()}
     assert sorted(annots) == ["FreeText", "Highlight", "Square"], sorted(annots)
@@ -446,22 +446,22 @@ if peek.pymupdf:
     canvas, view = doc.editor.canvas, doc.editor.canvas.viewport()
     drag(on_page(100, 200), on_page(200, 260))
     answers = []
-    peek.QMessageBox.question = lambda *a: answers.pop(0)
-    answers += [peek.QMessageBox.Cancel]
+    quickpeek.QMessageBox.question = lambda *a: answers.pop(0)
+    answers += [quickpeek.QMessageBox.Cancel]
     QTest.keyClick(w, Qt.Key_Escape)
     assert doc.editing
-    answers += [peek.QMessageBox.Discard]
+    answers += [quickpeek.QMessageBox.Discard]
     QTest.keyClick(w, Qt.Key_Escape)
     assert not doc.editing and not (d / "doc (edited) (2).pdf").exists()
     # The reader shows annotations: Qt alone would leave them out
-    assert peek.display_pdf(d / "doc (edited).pdf").name.endswith(".baked.pdf")
-    assert peek.display_pdf(d / "doc.pdf") == d / "doc.pdf"
+    assert quickpeek.display_pdf(d / "doc (edited).pdf").name.endswith(".baked.pdf")
+    assert quickpeek.display_pdf(d / "doc.pdf") == d / "doc.pdf"
     (d / "doc (edited).pdf").unlink()
 else:
     print("skipped PDF editor: pymupdf not installed")
 
 # Word files read as pages: drag selects text across lines, a click on a picture offers Copy / Save
-if peek.pymupdf:
+if quickpeek.pymupdf:
     pdf = QPdfWriter(str(d / "word.pdf"))
     pdf.setPageSize(QPageSize(QPageSize.A4))
     pdf.setResolution(72)
@@ -481,15 +481,15 @@ if peek.pymupdf:
     p.end()
     (d / "word.docx").write_bytes(b"")
     w.close()
-    w = peek.Peek(d / "word.docx")
+    w = quickpeek.QuickPeek(d / "word.docx")
     w.show()
     QTest.qWaitForWindowActive(w)
-    w.set_preview(peek.WordView(d / "word.pdf", d / "word.docx"))
+    w.set_preview(quickpeek.WordView(d / "word.pdf", d / "word.docx"))
     view, reader = w.preview, w.preview.reader
     QTest.qWait(100)
 
     def at(page, x, y):
-        return reader.mapFromScene(reader.pages[page].rect.topLeft() + QPointF(x, y) * peek.EDIT_SCALE)
+        return reader.mapFromScene(reader.pages[page].rect.topLeft() + QPointF(x, y) * quickpeek.EDIT_SCALE)
     QTest.mousePress(reader.viewport(), Qt.LeftButton, Qt.NoModifier, at(0, 62, 110))
     QTest.mouseMove(reader.viewport(), at(0, 300, 140))
     QTest.mouseMove(reader.viewport(), at(1, 160, 76))  # into the next page, past the line end
@@ -505,7 +505,7 @@ if peek.pymupdf:
     assert not view.card.isVisible() and not reader.selection and w.isVisible()
     QTest.mouseClick(reader.viewport(), Qt.LeftButton, Qt.NoModifier, at(0, 100, 270))  # the picture
     assert view.card.isVisible() and reader.picture(0, 0).size() == QSize(120, 80)
-    save = next(b for b in view.card.findChildren(peek.QPushButton) if b.text() == "Save")
+    save = next(b for b in view.card.findChildren(quickpeek.QPushButton) if b.text() == "Save")
     save.click()
     assert (d / "word picture 1-1.png").exists() and "word picture 1-1.png" in view.status.text()
     view.search.open_bar()
@@ -515,7 +515,7 @@ if peek.pymupdf:
     for name in ("word.pdf", "word.docx", "word picture 1-1.png"):
         (d / name).unlink()
     w.close()
-    w = peek.Peek(d / "img10.png")
+    w = quickpeek.QuickPeek(d / "img10.png")
     w.show()
     QTest.qWaitForWindowActive(w)
 else:
@@ -526,7 +526,7 @@ if shutil.which("ffmpeg"):
     subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "sine=duration=4", str(d / "tone.wav")],
                    check=True)
     pane = show("tone.wav")
-    assert isinstance(pane, peek.MediaPane)
+    assert isinstance(pane, quickpeek.MediaPane)
     assert wait(lambda: pane.total.text() == "0:04"), pane.total.text()
     assert wait(lambda: w.player.isPlaying())
     QTest.keyClick(w, Qt.Key_K)
@@ -539,7 +539,7 @@ if shutil.which("ffmpeg"):
     QTest.keyClick(w, Qt.Key_M)
     assert w.player.audioOutput().isMuted() and pane.mute.toolTip() == "Unmute (M)"
     QTest.keyClick(w, Qt.Key_M)
-    wave = pane.findChild(peek.Waveform)
+    wave = pane.findChild(quickpeek.Waveform)
     assert not hasattr(pane, "speed"), "speed is for videos only"
     assert wait(lambda: wave.peaks), "no waveform"
     assert len(wave.peaks) >= 500 and max(wave.peaks) == 1
@@ -553,7 +553,7 @@ if shutil.which("ffmpeg"):
     subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=d=2:s=64x48", str(d / "clip.mp4")],
                    check=True)
     pane = show("clip.mp4")
-    assert pane.findChild(peek.Waveform) is None and pane.speed.text() == "1×"
+    assert pane.findChild(quickpeek.Waveform) is None and pane.speed.text() == "1×"
     pane.speed.menu().actions()[-1].trigger()
     assert w.player.playbackRate() == 2 and pane.speed.text() == "2×"
     pane = show("tone.wav")
@@ -570,7 +570,7 @@ m.mkdir()
 image.save(str(m / "a.png"))
 (m / "b.txt").write_text("some words here\n")
 w.close()
-w = peek.Peek(m / "a.png")
+w = quickpeek.QuickPeek(m / "a.png")
 w.show()
 QTest.qWaitForWindowActive(w)
 shown = []
@@ -594,11 +594,11 @@ clip = QApplication.clipboard().mimeData()
 assert clip.urls() == [QUrl.fromLocalFile(str(m / "a.png"))] and clip.hasImage(), clip.formats()
 QTest.keyClick(w, Qt.Key_C, Qt.ControlModifier | Qt.ShiftModifier)
 assert QApplication.clipboard().text() == str(m / "a.png")
-peek.QInputDialog.exec = lambda self: (self.setTextValue("c.png"), 1)[1]
+quickpeek.QInputDialog.exec = lambda self: (self.setTextValue("c.png"), 1)[1]
 QTest.keyClick(w, Qt.Key_F2)
 assert (m / "c.png").exists() and not (m / "a.png").exists() and w.windowTitle() == "c.png", w.windowTitle()
 trashed = []
-peek.move_to_trash = lambda path: trashed.append(path) or path.unlink() or True
+quickpeek.move_to_trash = lambda path: trashed.append(path) or path.unlink() or True
 QTest.keyClick(w, Qt.Key_Delete)
 assert trashed == [m / "c.png"] and w.windowTitle() == "b.txt", w.windowTitle()
 shown.clear()  # a text view keeps its own Copy / Select All, then the file actions
@@ -611,13 +611,13 @@ w.close()
 t = d / "tools"
 t.mkdir()
 image.save(str(t / "pic.png"))
-w = peek.Peek(t / "pic.png")
+w = quickpeek.QuickPeek(t / "pic.png")
 w.show()
 QTest.qWaitForWindowActive(w)
 QTest.keyClick(w, Qt.Key_C)
 assert "pic.png" in w.panel.name.text()
 for fmt in ("JPG", "BMP"):
-    next(b for b in w.panel.findChildren(peek.QPushButton) if b.text().startswith(fmt)).click()
+    next(b for b in w.panel.findChildren(quickpeek.QPushButton) if b.text().startswith(fmt)).click()
     assert wait(lambda: f"pic.{fmt.lower()}</a>" in "".join(l.text() for l in w.panel.findChildren(QLabel)), 10000)
 QTest.qWait(50)  # the replaced result is deleted on the next event-loop turn
 links = [l.text() for l in w.panel.findChildren(QLabel) if "✓" in l.text() and l.isVisible()]
@@ -636,12 +636,12 @@ if np is not None:
     truth = np.hypot(xx - 200, yy - 200) < 100
     blocky = np.hypot((xx // 8) * 8 + 4 - 200, (yy // 8) * 8 + 4 - 200) < 106
     blocky[20:24, 20:24] = True
-    snapped = peek.snap_to_edges(blocky, np.where(truth, 0.2, 0.9).astype(np.float32), 16)
+    snapped = quickpeek.snap_to_edges(blocky, np.where(truth, 0.2, 0.9).astype(np.float32), 16)
     snapped[200:203, 200:203] = False
-    assert (peek.tidy(snapped, [(200, 150)]) != truth).sum() == 0
+    assert (quickpeek.tidy(snapped, [(200, 150)]) != truth).sum() == 0
 
-models = peek.MODELS_DIR
-if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES):
+models = quickpeek.MODELS_DIR
+if quickpeek.has_onnx() and all((models / name).exists() for name in quickpeek.SAM2_FILES):
     art = QImage(1200, 800, QImage.Format_RGB32)
     art.fill(QColor("#7aa6d8"))
     p = QPainter(art)
@@ -653,7 +653,7 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
     p.drawRect(800, 250, 250, 250)  # something else
     p.end()
     art.save(str(t / "art.png"))
-    w = peek.Peek(t / "art.png")
+    w = quickpeek.QuickPeek(t / "art.png")
     w.show()
     QTest.qWaitForWindowActive(w)
     pane = w.preview
@@ -707,7 +707,7 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
     p.drawRoundedRect(430, 300, 340, 400, 60, 60)  # body
     p.end()
     figure.save(str(t / "figure.png"))
-    w = peek.Peek(t / "figure.png")
+    w = quickpeek.QuickPeek(t / "figure.png")
     w.show()
     QTest.qWaitForWindowActive(w)
     pane = w.preview
@@ -752,7 +752,7 @@ assert w.size() == size, (w.size(), size)
 w.toggle_side()
 # Every preview's content starts below the same top bar, so nothing jumps between files
 show("notes.txt")
-assert w.bar_room.isVisible(), "the text preview has no bar of its own: Peek keeps the room"
+assert w.bar_room.isVisible(), "the text preview has no bar of its own: QuickPeek keeps the room"
 text_top = w.preview.mapTo(w, QPoint(0, 0)).y()
 show("img2.png")
 assert not w.bar_room.isVisible()
@@ -775,11 +775,11 @@ model.set_flying(False)
 # Leaving pictures unloads the AI models: they hold hundreds of MB
 show("img2.png")
 QTest.qWait(1200)  # windows from earlier checks finish their own cleanup first
-peek._sessions["model"] = object()
+quickpeek._sessions["model"] = object()
 w.trim()
-assert peek._sessions, "kept while on a picture"
+assert quickpeek._sessions, "kept while on a picture"
 show("notes.txt")
-assert wait(lambda: not peek._sessions, 3000), "unloaded after leaving pictures"
+assert wait(lambda: not quickpeek._sessions, 3000), "unloaded after leaving pictures"
 
 # Revit and Affinity files show the PNG preview they carry; presentations show their saved first slide
 sample = QImage(40, 30, QImage.Format_RGB32)
@@ -790,11 +790,11 @@ sample.save(png, "PNG")
 (d / "house.rvt").write_bytes(b"\xd0\xcf\x11\xe0" + b"\0" * 500 + bytes(png.data()) + b"\0" * 300)
 (d / "art.af").write_bytes(b"\0\xffKA" + bytes(png.data()).replace(b"IEND", b"IENX") + b"layers" + bytes(png.data()))
 for name in ("house.rvt", "art.af"):
-    shown = peek.embedded_png(d / name, last=name.endswith(".af"))
+    shown = quickpeek.embedded_png(d / name, last=name.endswith(".af"))
     assert shown.size() == sample.size() and shown.pixelColor(0, 0) == sample.pixelColor(0, 0), name
 with zipfile.ZipFile(d / "thumb.odp", "w") as z:
     z.writestr("Thumbnails/thumbnail.png", bytes(png.data()))
-assert peek.slides_thumbnail(d / "thumb.odp").size() == sample.size()
+assert quickpeek.slides_thumbnail(d / "thumb.odp").size() == sample.size()
 
 # Presentations: ↑ / ↓ move between slides; a Morph slide glides its same-named objects
 P = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' \
@@ -826,19 +826,19 @@ with zipfile.ZipFile(d / "deck.pptx", "w") as z:
     z.writestr("ppt/slides/slide1.xml", slide_xml([("Ball", 0, 0, 1000000, 0), ("Gone", 5000000, 0, 500000, 0)], False))
     z.writestr("ppt/slides/slide2.xml", slide_xml([("Ball", 4000000, 2000000, 2000000, 90)], True))
     z.writestr("ppt/slides/slide3.xml", slide_xml([], False).replace("<p:sld ", '<p:sld show="0" '))
-slides, size = peek.read_slides(d / "deck.pptx")
+slides, size = quickpeek.read_slides(d / "deck.pptx")
 assert size == (9144000, 5143500) and len(slides) == 2, (size, slides)  # the hidden slide is left out
 assert [o[0] for o in slides[0]["objects"]] == ["Ball", "Gone"] and not slides[0]["morph"]
 assert slides[1]["morph"] and slides[1]["duration"] == 1500
 assert slides[1]["objects"][0][1] == (4000000, 2000000, 2000000, 2000000, 90.0)
-pages = peek.morph_deck(d / "deck.pptx", slides, d / "sprites.pptx")
+pages = quickpeek.morph_deck(d / "deck.pptx", slides, d / "sprites.pptx")
 assert pages == [(0, None, None), (0, 0, "000000"), (0, 0, "FFFFFF"), (0, 1, "000000"), (0, 1, "FFFFFF"),
                  (1, None, None), (1, 0, "000000"), (1, 0, "FFFFFF")], pages
 with zipfile.ZipFile(d / "sprites.pptx") as z:
     assert z.read("ppt/presentation.xml").count(b"sldId ") == len(pages)
-    sprite = z.read("ppt/slides/peek3.xml").decode()
+    sprite = z.read("ppt/slides/quickpeek3.xml").decode()
     assert 'name="Gone"' in sprite and 'name="Ball"' not in sprite and 'showMasterSp="0"' in sprite, sprite
-    assert 'name="Ball"' not in z.read("ppt/slides/peek0.xml").decode()  # the background page has no objects
+    assert 'name="Ball"' not in z.read("ppt/slides/quickpeek0.xml").decode()  # the background page has no objects
 
 pdf = QPdfWriter(str(d / "deck.pdf"))
 pdf.setPageSize(QPageSize(QPageSize.A4))
@@ -848,10 +848,10 @@ pdf.newPage()
 p.fillRect(QRectF(0, 0, 50, 50), Qt.green)
 p.end()
 w.close()
-w = peek.Peek(d / "deck.pptx")
+w = quickpeek.QuickPeek(d / "deck.pptx")
 w.show()
 QTest.qWaitForWindowActive(w)
-w.set_preview(peek.SlideView(d / "deck.pdf", d / "deck.pptx"))
+w.set_preview(quickpeek.SlideView(d / "deck.pdf", d / "deck.pptx"))
 view = w.preview
 QTest.qWait(100)
 assert view.label.text() == "Slide 1 of 2"
@@ -867,7 +867,7 @@ if importlib.util.find_spec("numpy"):
     for x, (black, white) in enumerate([(0x000000, 0xffffff), (0xff0000, 0xff0000), (0x800000, 0xff7f7f), (0, 0)]):
         on_black.setPixel(x, 0, black)
         on_white.setPixel(x, 0, white)
-    cut = peek.sprite_image(on_black, on_white)
+    cut = quickpeek.sprite_image(on_black, on_white)
     assert [cut.pixelColor(x, 0).alpha() for x in range(3)] == [0, 255, 128], "alpha from black vs white"
     assert cut.pixelColor(2, 0).red() == 255  # half-covered red stays fully red, just half see-through
     # Morph plays with the sprite pages; drawing a frame halfway must not fail
@@ -882,7 +882,7 @@ if importlib.util.find_spec("numpy"):
     assert wait(lambda: view.frame is None, 3000)
 
 # AI image entries appear only when their tools are installed
-codes = [code for code, _ in peek.convert_targets(d / "img2.png")]
-assert [c for c in codes if c in peek.AI_TARGETS] == [c for c, _ in peek.ai_image_targets()], codes
+codes = [code for code, _ in quickpeek.convert_targets(d / "img2.png")]
+assert [c for c in codes if c in quickpeek.AI_TARGETS] == [c for c, _ in quickpeek.ai_image_targets()], codes
 
 print("ok")

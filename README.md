@@ -1,4 +1,4 @@
-# peek
+# KDEQuickPeek
 
 Quick file previewer for KDE Plasma. Select a file and press Space.
 
@@ -10,33 +10,33 @@ On Arch or CachyOS, from this folder:
 makepkg -si
 ```
 
-The command installs `peek`, `peek-desktop` and the "Quick Preview" entry in Dolphin's right-click menu. Optional features list the packages they need: see `optdepends` in `PKGBUILD`, or run `pacman -Qi peek`.
+The command installs `quickpeek`, `quickpeek-desktop` and the "Quick Preview" entry in Dolphin's right-click menu. Optional features list the packages they need: see `optdepends` in `PKGBUILD`, or run `pacman -Qi quickpeek`.
 
-To make Space open peek on desktop icons:
+To make Space open quickpeek on desktop icons:
 
 ```bash
-peek-desktop install
+quickpeek-desktop install
 systemctl --user restart plasma-plasmashell
 ```
 
-Run `peek-desktop install` again after every Plasma update.
+Run `quickpeek-desktop install` again after every Plasma update.
 
-AI models download on first use into `~/.local/share/peek/models`.
+AI models download on first use into `~/.local/share/quickpeek/models`.
 
 ## Update
 
-After editing `peek.py`, commit, then run `makepkg -si` again. The version number comes from the commit count.
+After editing `quickpeek.py`, commit, then run `makepkg -si` again. The version number comes from the commit count.
 
 ## Offline copy
 
-`makepkg` leaves a `peek-*.pkg.tar.zst` file in this folder. Keep a copy on a USB stick or cloud drive. Install it on a fresh system with:
+`makepkg` leaves a `quickpeek-*.pkg.tar.zst` file in this folder. Keep a copy on a USB stick or cloud drive. Install it on a fresh system with:
 
 ```bash
-sudo pacman -U peek-*.pkg.tar.zst
+sudo pacman -U quickpeek-*.pkg.tar.zst
 ```
 
 ## Tests
 
 ```bash
-QT_QPA_PLATFORM=offscreen python3 test_peek.py
+QT_QPA_PLATFORM=offscreen python3 test_quickpeek.py
 ```

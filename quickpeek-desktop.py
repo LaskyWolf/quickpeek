@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Make Space on a selected Plasma desktop icon open `peek`.
+"""Make Space on a selected Plasma desktop icon open `quickpeek`.
 
 Plasma loads a desktop package from ~/.local/share before /usr/share, so this installs a
 patched copy of the system desktop package there. The copy does not follow Plasma updates:
-run `peek-desktop install` again after every Plasma update.
+run `quickpeek-desktop install` again after every Plasma update.
 
-Usage: peek-desktop install | uninstall
+Usage: quickpeek-desktop install | uninstall
 """
 import shutil
 import subprocess
@@ -15,7 +15,8 @@ from pathlib import Path
 PACKAGE = "org.kde.desktopcontainment"
 SYSTEM = Path("/usr/share/plasma/plasmoids") / PACKAGE
 LOCAL = Path.home() / ".local/share/plasma/plasmoids" / PACKAGE
-MARKER = LOCAL / ".peek-patch"  # proves the local copy is ours before we ever delete it
+MARKER = LOCAL / ".quickpeek-patch"  # proves the local copy is ours before we ever delete it
+OLD_MARKER = LOCAL / ".peek-patch"  # left by the same tool when the app was called peek
 
 PATCHES = [
     # 1. Plasma's module for running shell commands from QML
@@ -31,7 +32,7 @@ PATCHES = [
 
                 Folder.ShortCut {
 """),
-    # 3. Space on a selected icon: run peek on it instead of starting a type-ahead search
+    # 3. Space on a selected icon: run quickpeek on it instead of starting a type-ahead search
     ("                Keys.onPressed: event => {\n                    // Start by assuming we might handle it\n",
      """                Keys.onPressed: event => {
                     if (event.key === Qt.Key_Space && event.modifiers === Qt.NoModifier
@@ -47,17 +48,17 @@ PATCHES = [
 
 
 def install():
-    if LOCAL.exists() and not MARKER.exists():
-        sys.exit(f"{LOCAL} exists and was not made by peek-desktop. Move it away first.")
+    if LOCAL.exists() and not (MARKER.exists() or OLD_MARKER.exists()):
+        sys.exit(f"{LOCAL} exists and was not made by quickpeek-desktop. Move it away first.")
     if LOCAL.exists():
         shutil.rmtree(LOCAL)
     shutil.copytree(SYSTEM, LOCAL)
     qml = LOCAL / "contents/ui/FolderView.qml"
     text = qml.read_text()
-    # plasmashell's PATH may lack ~/.local/bin, so bake in peek's full path
-    peek = shutil.which("peek") or sys.exit("peek is not on PATH; install it first.")
+    # plasmashell's PATH may lack ~/.local/bin, so bake in quickpeek's full path
+    quickpeek = shutil.which("quickpeek") or sys.exit("quickpeek is not on PATH; install it first.")
     for old, new in PATCHES:
-        new = new.replace("PEEK", peek)
+        new = new.replace("PEEK", quickpeek)
         if text.count(old) != 1:
             shutil.rmtree(LOCAL)
             sys.exit("This Plasma version's FolderView.qml changed shape; patch not applied, nothing installed.")
@@ -69,7 +70,7 @@ def install():
 
 
 def uninstall():
-    if not MARKER.exists():
+    if not (MARKER.exists() or OLD_MARKER.exists()):
         sys.exit("Nothing to uninstall.")
     shutil.rmtree(LOCAL)
     print("Removed. Restart the desktop:\n  systemctl --user restart plasma-plasmashell")

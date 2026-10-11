@@ -1,8 +1,8 @@
-# Personal package for peek. Build and install from this folder: makepkg -si
-pkgname=peek
+# Personal package for KDEQuickPeek. Build and install from this folder: makepkg -si
+pkgname=quickpeek
 pkgver=r27.fea0d50
 pkgrel=1
-pkgdesc="Quick file previewer for KDE Plasma (Space to preview)"
+pkgdesc="KDEQuickPeek: quick file previewer for KDE Plasma (Space to preview)"
 arch=(any)
 license=(custom)
 depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d qt6-webengine glib2)
@@ -24,7 +24,7 @@ optdepends=(
   'plasma-workspace: set as wallpaper'
   'dolphin: show in folder'
 )
-source=(peek.py peek-desktop.py peek.desktop)
+source=(quickpeek.py quickpeek-desktop.py quickpeek.desktop)
 sha256sums=(SKIP SKIP SKIP)
 
 pkgver() {
@@ -33,7 +33,7 @@ pkgver() {
 }
 
 package() {
-  install -Dm755 peek.py "$pkgdir/usr/bin/peek"
-  install -Dm755 peek-desktop.py "$pkgdir/usr/bin/peek-desktop"
-  install -Dm644 peek.desktop "$pkgdir/usr/share/kio/servicemenus/peek.desktop"
+  install -Dm755 quickpeek.py "$pkgdir/usr/bin/quickpeek"
+  install -Dm755 quickpeek-desktop.py "$pkgdir/usr/bin/quickpeek-desktop"
+  install -Dm644 quickpeek.desktop "$pkgdir/usr/share/kio/servicemenus/quickpeek.desktop"
 }

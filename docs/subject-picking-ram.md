@@ -6,7 +6,7 @@ Measured on CachyOS with 22 CPU cores, onnxruntime 1.29 (CPU), on a drawing of 1
 
 | Stage | RAM | How long |
 |---|---|---|
-| peek with a picture open | ~280 MB | always |
+| quickpeek with a picture open | ~280 MB | always |
 | SAM 2.1 models loaded (encoder + decoder) | +360 MB | while picking |
 | SAM 2.1 reading the picture | +0.9 GB peak | ~2–9 s |
 | Edge model (ToonOut) running | +4.1 GB peak | ~9 s |

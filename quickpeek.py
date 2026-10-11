@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""peek: quick file previewer (GNOME Sushi clone) for KDE. Usage: peek FILE | peek --quit"""
+"""KDEQuickPeek (command: quickpeek): quick file previewer (GNOME Sushi clone) for KDE. Usage: quickpeek FILE | quickpeek --quit"""
 import configparser
 import datetime
 import functools
@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (QLayout, QGraphicsBlurEffect, QGraphicsOpacityEff
 
 def lazy_import(name):
     """The module if it is installed, else None. It loads on first use: pymupdf alone costs ~120 MB of RAM,
-    which a peek that only shows photos never needs."""
+    which a quickpeek that only shows photos never needs."""
     spec = importlib.util.find_spec(name)
     if spec is None:
         return None
@@ -86,13 +86,13 @@ pymupdf = lazy_import("pymupdf")
 # GStreamer plays short sounds fine; Qt's default FFmpeg backend freezes on them (Qt 6.12)
 if (Path(QLibraryInfo.path(QLibraryInfo.PluginsPath)) / "multimedia/libgstreamermediaplugin.so").exists():
     os.environ.setdefault("QT_MEDIA_BACKEND", "gstreamer")
-SOCKET = f"peek-{os.getuid()}"  # one peek window per user; later launches hand their file to it
+SOCKET = f"quickpeek-{os.getuid()}"  # one quickpeek window per user; later launches hand their file to it
 
 TEXT_LIMIT = 1_000_000  # bytes shown for text files, so a 2 GB log doesn't freeze the window
 CODE_LIMIT = 200_000  # characters highlighted; bigger files show as plain text (pygments is pure Python)
 BLEND_HEAD = 4_000_000  # the .blend thumbnail sits near the start; never decompress a whole scene
 THUMB_CACHE = Path.home() / ".cache/thumbnails"
-CACHE = Path.home() / ".cache/peek"  # converted .glb/.pdf files, keyed by path + mtime + size
+CACHE = Path.home() / ".cache/quickpeek"  # converted .glb/.pdf files, keyed by path + mtime + size
 MIN_WINDOW = QSize(640, 420)  # toolbars and the side panel still fit
 CACHE_LIMIT = 500 * 1024 ** 2  # oldest converted files are deleted beyond this
 VIEW_PROPS = Path.home() / ".local/share/dolphin/view_properties"
@@ -520,7 +520,7 @@ def embedded_png(path, last=False):
         end = data.find(b"IEND", start)
         if start < 0 or end < 0:
             return None
-        # ponytail: Revit splits streams into sectors; a split preview fails to decode and peek shows the icon
+        # ponytail: Revit splits streams into sectors; a split preview fails to decode and quickpeek shows the icon
         return QImage.fromData(data[start:end + 8])
 
 
@@ -837,7 +837,7 @@ def bar_height():
 
 def toolbar(first, *items):
     """`first` takes the free space on the left; each tuple after it becomes a Tray."""
-    row = QHBoxLayout(objectName="toolbar")  # Peek looks for it: see set_preview
+    row = QHBoxLayout(objectName="toolbar")  # QuickPeek looks for it: see set_preview
     row.addStrut(bar_height())
     row.setSpacing(8)
     row.addWidget(first, 1)
@@ -3061,7 +3061,7 @@ def morph_deck(path, slides, dst):
     types_ = zip_xml(z, "[Content_Types].xml")
     out = zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED)
     for k, (page, xml) in enumerate(zip(pages, parts)):
-        name = f"ppt/slides/peek{k}.xml"
+        name = f"ppt/slides/quickpeek{k}.xml"
         out.writestr(name, xml)
         original = slides[page[0]]["part"]
         folder, file = original.rsplit("/", 1)
@@ -3069,10 +3069,10 @@ def morph_deck(path, slides, dst):
             slide_rels = zip_xml(z, f"{folder}/_rels/{file}.rels")
             for rel in [r for r in slide_rels if r.get("Type").rsplit("/", 1)[-1] in ("notesSlide", "comments")]:
                 slide_rels.remove(rel)
-            out.writestr(f"ppt/slides/_rels/peek{k}.xml.rels", ElementTree.tostring(slide_rels, encoding="unicode"))
+            out.writestr(f"ppt/slides/_rels/quickpeek{k}.xml.rels", ElementTree.tostring(slide_rels, encoding="unicode"))
         ElementTree.SubElement(ids, f"{{{PML['p']}}}sldId", {"id": str(256 + k), f"{{{PML['r']}}}id": f"rIdPeek{k}"})
         ElementTree.SubElement(rels, f"{{{PML['rel']}}}Relationship", {
-            "Id": f"rIdPeek{k}", "Target": f"slides/peek{k}.xml",
+            "Id": f"rIdPeek{k}", "Target": f"slides/quickpeek{k}.xml",
             "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"})
         ElementTree.SubElement(types_, f"{{{PML['ct']}}}Override", {
             "PartName": f"/{name}",
@@ -4434,7 +4434,7 @@ def details_html(sections):
 # ---------------------------------------------------------------- local AI (runs on this PC, nothing is uploaded)
 
 OCR_SIDE = 1280  # longest side the text detector sees, in pixels
-MODELS_DIR = Path.home() / ".local/share/peek/models"  # not in the cache: cleanup must never delete these
+MODELS_DIR = Path.home() / ".local/share/quickpeek/models"  # not in the cache: cleanup must never delete these
 AI_MODELS = {  # name: (file, url, size in bytes) -- downloaded the first time a tool is used
     # Segment Anything 2.1 (Hiera Base+), zipped: the encoder reads a picture once, the decoder turns each
     # click into a mask. Unpacked by sam2_files.
@@ -4519,7 +4519,7 @@ def session(path, keep=True):
     if path in _sessions:
         return _sessions[path]
     options = onnxruntime.SessionOptions()
-    options.enable_cpu_mem_arena = False  # give memory back after each run: peek stays open between previews
+    options.enable_cpu_mem_arena = False  # give memory back after each run: quickpeek stays open between previews
     options.add_session_config_entry("session.intra_op.allow_spinning", "0")  # no busy-waiting when idle
     options.intra_op_num_threads = max(1, (os.cpu_count() or 2) // 2)  # half the cores: the PC stays responsive
     model = onnxruntime.InferenceSession(str(path), options, providers=["CPUExecutionProvider"])
@@ -4529,13 +4529,13 @@ def session(path, keep=True):
 
 
 def free_ai_memory():
-    """Unload the AI models and hand freed memory back to the system: peek stays running hidden."""
+    """Unload the AI models and hand freed memory back to the system: quickpeek stays running hidden."""
     _sessions.clear()
     trim_memory()
 
 
 def trim_memory():
-    """Hand freed memory back to the system. glibc keeps freed blocks for reuse otherwise, so a peek that
+    """Hand freed memory back to the system. glibc keeps freed blocks for reuse otherwise, so a quickpeek that
     showed a video and a big photo would keep their size forever."""
     import ctypes
     import gc
@@ -5007,7 +5007,7 @@ def text_to_document(path, ext):
 # ---------------------------------------------------------------- side panel
 
 class SidePanel(QWidget):
-    """The side panel: the file's name and type, everything peek knows about it (read on a worker thread),
+    """The side panel: the file's name and type, everything quickpeek knows about it (read on a worker thread),
     then its tools: one button per action and the latest result. Results land next to the original;
     nothing is overwritten."""
     open_file = Signal(object)
@@ -5240,7 +5240,7 @@ EXTRACTORS = {".blend": blend_thumbnail, ".clip": clip_preview, ".kra": krita_pr
 
 # ---------------------------------------------------------------- the window
 
-class Peek(QWidget):
+class QuickPeek(QWidget):
     def __init__(self, path):
         super().__init__()
         self.preview = QWidget()
@@ -5322,7 +5322,7 @@ class Peek(QWidget):
         QShortcut("F11", self, lambda: self.showNormal() if self.isFullScreen() else self.showFullScreen())
         QApplication.instance().focusChanged.connect(self.update_shortcuts)
 
-        self.settings = QSettings("peek", "peek")
+        self.settings = QSettings("quickpeek", "quickpeek")
         self.player.audioOutput().setVolume(float(self.settings.value("volume", 1.0)))
         if geometry := self.settings.value("geometry"):
             self.restoreGeometry(geometry)
@@ -5377,7 +5377,7 @@ class Peek(QWidget):
         self.show_file()
 
     def receive(self, socket):
-        """Another `peek FILE` launch: show its file here, or close if it's the file already shown."""
+        """Another `quickpeek FILE` launch: show its file here, or close if it's the file already shown."""
         if not socket.bytesAvailable():
             socket.waitForReadyRead(1000)
         token, _, path = bytes(socket.readAll()).decode().partition("\n")
@@ -5404,7 +5404,7 @@ class Peek(QWidget):
         if isinstance(self.preview, DocView) and not self.preview.set_editing(False):
             event.ignore()  # you chose to keep editing
             return
-        # Stay running hidden: the next `peek FILE` shows up instantly instead of starting Python again
+        # Stay running hidden: the next `quickpeek FILE` shows up instantly instead of starting Python again
         if not self.isFullScreen():
             self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("volume", self.player.audioOutput().volume())
@@ -5729,7 +5729,7 @@ def to_local_path(arg):
 
 
 def send_to_running(message):
-    """Hand a path (or --quit) to the running peek. False if none is running."""
+    """Hand a path (or --quit) to the running quickpeek. False if none is running."""
     socket = QLocalSocket()
     socket.connectToServer(SOCKET)
     if not socket.waitForConnected(300):
@@ -5740,21 +5740,34 @@ def send_to_running(message):
     return True
 
 
+def move_old_files():
+    """Carry settings, AI models and the cache over from when this app was called peek, once."""
+    home = Path.home()
+    for old, new in ((".config/peek", ".config/quickpeek"), (".local/share/peek", ".local/share/quickpeek"),
+                     (".cache/peek", ".cache/quickpeek")):
+        if (home / old).is_dir() and not (home / new).exists():
+            (home / old).rename(home / new)
+    settings = home / ".config/quickpeek/peek.conf"
+    if settings.exists() and not settings.with_name("quickpeek.conf").exists():
+        settings.rename(settings.with_name("quickpeek.conf"))
+
+
 def main():
+    move_old_files()  # ponytail: drop once no install still has the old folders
     app = QApplication(sys.argv)
-    if sys.argv[1:] == ["--quit"]:  # stop the hidden background peek, e.g. after updating peek
-        print("stopped" if send_to_running("--quit") else "peek is not running")
+    if sys.argv[1:] == ["--quit"]:  # stop the hidden background quickpeek, e.g. after updating quickpeek
+        print("stopped" if send_to_running("--quit") else "quickpeek is not running")
         return 0
     path = Path(to_local_path(sys.argv[1])) if len(sys.argv) == 2 else None
     if not path or not path.exists():
-        sys.exit("usage: peek FILE | peek --quit")
+        sys.exit("usage: quickpeek FILE | quickpeek --quit")
     if send_to_running(path.resolve()):
         return 0
-    app.setQuitOnLastWindowClosed(False)  # closing hides the window; peek keeps running for next time
+    app.setQuitOnLastWindowClosed(False)  # closing hides the window; quickpeek keeps running for next time
     prune_cache(clean_parts=True)
-    window = Peek(path.resolve())
+    window = QuickPeek(path.resolve())
     server = QLocalServer(window)
-    QLocalServer.removeServer(SOCKET)  # clears a socket left behind by a crashed peek
+    QLocalServer.removeServer(SOCKET)  # clears a socket left behind by a crashed quickpeek
     server.listen(SOCKET)
     server.newConnection.connect(lambda: window.receive(server.nextPendingConnection()))
     window.show()
