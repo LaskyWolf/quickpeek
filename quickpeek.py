@@ -203,18 +203,9 @@ Item {
     }
     OrbitCameraController { anchors.fill: view; origin: orbit; camera: camera; enabled: !root.flying }
     // R / F would move along the camera's own up, which tilts with the view: off, Q / E lift instead
-    WasdController { id: wasd; anchors.fill: view; controlledObject: flyCam; enabled: root.flying
-                     upSpeed: 0; downSpeed: 0; shiftSpeed: 1; speed: root.baseSpeed * root.speedFactor
-        WheelHandler {  // like Minecraft's spectator mode: each notch is 20% faster or slower
-            enabled: root.flying
-            onWheel: event => {
-                const notches = event.angleDelta.y / 120
-                root.speedFactor = Math.min(Math.max(root.speedFactor * Math.pow(1.2, notches), 0.05), 50)
-                speedNote.opacity = 1
-                speedFade.restart()
-            }
-        }
-    }
+    WasdController { id: wasd; objectName: "wasd"; anchors.fill: view; controlledObject: flyCam; enabled: root.flying
+                     // shiftSpeed replaces speed while Shift is held (it is not a multiplier): same speed, the wheel sets it
+                     upSpeed: 0; downSpeed: 0; speed: root.baseSpeed * root.speedFactor; shiftSpeed: speed }
     FrameAnimation {
         running: root.flying && root.lift !== 0
         onTriggered: flyCam.y += root.lift * 500 * wasd.speed * frameTime  // the controller's pace: 5 units × speed per 1/100 s
@@ -274,6 +265,13 @@ Item {
         visible: model.status === RuntimeLoader.Error
         text: model.errorString
         color: root.textColor
+    }
+
+    // The wheel while flying, like Minecraft's spectator mode: each notch is 20% faster or slower
+    function changeSpeed(notches) {
+        root.speedFactor = Math.min(Math.max(root.speedFactor * Math.pow(1.2, notches), 0.05), 50)
+        speedNote.opacity = 1
+        speedFade.restart()
     }
 
     // balsam makes one Timeline per animation and starts them all; keep only the first running
@@ -3793,7 +3791,10 @@ class ModelView(QWidget):
         QMetaObject.invokeMethod(self.view.rootObject(), "fit")
 
     def eventFilter(self, obj, event):
-        """Hold E to rise, Q to sink while flying; the QML moves the camera every frame."""
+        """While flying: hold E to rise, Q to sink (the QML moves the camera every frame); the wheel sets the speed."""
+        if obj is self.view and self.flying and event.type() == QEvent.Wheel:
+            QMetaObject.invokeMethod(self.view.rootObject(), "changeSpeed", Q_ARG("QVariant", event.angleDelta().y() / 120))
+            return True
         if (obj is self.view and self.flying and event.type() in (QEvent.KeyPress, QEvent.KeyRelease)
                 and not event.isAutoRepeat()):
             root = self.view.rootObject()
@@ -5564,6 +5565,7 @@ class QuickPeek(QWidget):
             new.editing_changed.connect(self.update_shortcuts)
         self.bar_room.setVisible(new.findChild(QHBoxLayout, "toolbar") is None)
         self.layout_.replaceWidget(self.preview, new)
+        new.show()  # now, not on the next event loop turn as the layout would: see the repaint below
         if not new.isAncestorOf(self.video):
             self.video.setParent(None)  # keep it alive when the old preview goes
         self.preview.deleteLater()
@@ -5574,7 +5576,10 @@ class QuickPeek(QWidget):
         self.setFocus()
         self.update_shortcuts()
         if self.isVisible():
-            self.repaint()  # show the whole new preview now: a 3D view blocks for a moment while it starts
+            # Show the whole new preview now: a 3D view blocks for a moment while it starts. Lay it out
+            # first, or its buttons are still at Qt's placeholder size and the bar paints empty.
+            QApplication.sendPostedEvents(None, QEvent.LayoutRequest)
+            self.repaint()
 
     def open_external(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.files[self.index])))

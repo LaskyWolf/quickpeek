@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from PySide6.QtCore import QBuffer, QMimeDatabase, QSize, QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, QRectF, Qt
+from PySide6.QtCore import QObject, QBuffer, QMimeDatabase, QSize, QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QPageSize, QPainter, QPdfWriter, QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QGraphicsView, QToolButton, QLabel, QPlainTextEdit, QApplication
@@ -761,6 +761,10 @@ assert abs(text_top - image_top) <= 2, (text_top, image_top)
 
 # 3D: the model loads once the empty view is drawn; the wheel sets the fly speed, Minecraft style
 (d / "cube.obj").write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nf 1 2 3\nf 1 2 4\nf 1 3 4\nf 2 3 4\n")
+show("img2.png")
+w.open(d / "cube.obj")  # no event loop turn yet: this is the state the window paints before the 3D view blocks
+buttons = [b for b in w.preview.findChildren(QToolButton) if b.isVisible()]
+assert buttons and all(b.width() < 300 for b in buttons), [b.size() for b in buttons]
 model = show("cube.obj")
 root = model.view.rootObject()
 assert wait(lambda: not root.property("source").isEmpty(), 3000), "the model never started loading"
@@ -770,6 +774,8 @@ for _ in range(2):  # two notches up
     QApplication.sendEvent(model.view, QWheelEvent(center, model.view.mapToGlobal(center), QPoint(), QPoint(0, 120),
                                                    Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
 assert abs(root.property("speedFactor") - 1.44) < 0.01, root.property("speedFactor")
+fly_speed = root.findChild(QObject, "wasd")
+assert fly_speed.property("shiftSpeed") == fly_speed.property("speed"), "Shift must not change the speed"
 model.set_flying(False)
 
 # Leaving pictures unloads the AI models: they hold hundreds of MB
