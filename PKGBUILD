@@ -1,6 +1,6 @@
 # Personal package for peek. Build and install from this folder: makepkg -si
 pkgname=peek
-pkgver=r23.f4ffc2e
+pkgver=r25.734ff96
 pkgrel=1
 pkgdesc="Quick file previewer for KDE Plasma (Space to preview)"
 arch=(any)
