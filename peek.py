@@ -2,6 +2,7 @@
 """peek: quick file previewer (GNOME Sushi clone) for KDE. Usage: peek FILE | peek --quit"""
 import configparser
 import datetime
+import functools
 import grp
 import gzip
 import importlib.util
@@ -92,6 +93,7 @@ CODE_LIMIT = 200_000  # characters highlighted; bigger files show as plain text 
 BLEND_HEAD = 4_000_000  # the .blend thumbnail sits near the start; never decompress a whole scene
 THUMB_CACHE = Path.home() / ".cache/thumbnails"
 CACHE = Path.home() / ".cache/peek"  # converted .glb/.pdf files, keyed by path + mtime + size
+MIN_WINDOW = QSize(640, 420)  # toolbars and the side panel still fit
 CACHE_LIMIT = 500 * 1024 ** 2  # oldest converted files are deleted beyond this
 VIEW_PROPS = Path.home() / ".local/share/dolphin/view_properties"
 MODELS = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".dae", ".3ds"}  # Qt's assimp importer
@@ -126,7 +128,8 @@ Item {
     property color textColor
     property bool flying: false
     property int lift: 0  // while flying: +1 E held (up), -1 Q held (down), along the world's vertical axis
-    property bool fast: false  // Shift held
+    property real baseSpeed: 1  // fly speed that suits the model's size: see fit()
+    property real speedFactor: 1  // the wheel while flying: up faster, down slower
     property bool wireframe: false
     property bool spin: false
     property bool grid: true
@@ -184,6 +187,8 @@ Item {
             id: model
             source: root.source
             visible: scene.status !== Loader3D.Ready
+            opacity: status === RuntimeLoader.Success ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
             onBoundsChanged: root.fit()
         }
         Loader3D {
@@ -199,11 +204,36 @@ Item {
     OrbitCameraController { anchors.fill: view; origin: orbit; camera: camera; enabled: !root.flying }
     // R / F would move along the camera's own up, which tilts with the view: off, Q / E lift instead
     WasdController { id: wasd; anchors.fill: view; controlledObject: flyCam; enabled: root.flying
-                     upSpeed: 0; downSpeed: 0 }
+                     upSpeed: 0; downSpeed: 0; shiftSpeed: 1; speed: root.baseSpeed * root.speedFactor
+        WheelHandler {  // like Minecraft's spectator mode: each notch is 20% faster or slower
+            enabled: root.flying
+            onWheel: event => {
+                const notches = event.angleDelta.y / 120
+                root.speedFactor = Math.min(Math.max(root.speedFactor * Math.pow(1.2, notches), 0.05), 50)
+                speedNote.opacity = 1
+                speedFade.restart()
+            }
+        }
+    }
     FrameAnimation {
         running: root.flying && root.lift !== 0
-        // the controller's own pace: 5 units × speed per 1/100 s, 3× with Shift
-        onTriggered: flyCam.y += root.lift * 500 * wasd.speed * (root.fast ? wasd.shiftSpeed : 1) * frameTime
+        onTriggered: flyCam.y += root.lift * 500 * wasd.speed * frameTime  // the controller's pace: 5 units × speed per 1/100 s
+    }
+    Rectangle {
+        id: speedNote
+        anchors { top: parent.top; horizontalCenter: parent.horizontalCenter; topMargin: 12 }
+        width: speedText.implicitWidth + 24; height: speedText.implicitHeight + 12; radius: height / 2
+        color: Qt.rgba(root.background.r, root.background.g, root.background.b, 0.88)
+        border.color: Qt.rgba(root.textColor.r, root.textColor.g, root.textColor.b, 0.3)
+        opacity: 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+        Text {
+            id: speedText
+            anchors.centerIn: parent
+            color: root.textColor
+            text: "Speed \u00d7" + (root.speedFactor < 1 ? root.speedFactor.toFixed(2) : root.speedFactor.toFixed(1))
+        }
+        Timer { id: speedFade; interval: 900; onTriggered: speedNote.opacity = 0 }
     }
     // Previous / next file, as in the other previews: widgets can't float over this view, so they're drawn here
     component NavArrow: Item {
@@ -236,7 +266,7 @@ Item {
         color: root.textColor
         opacity: 0.7
         text: root.flying
-              ? "W A S D / arrows: move  ·  E / Q: up / down  ·  Shift: faster  ·  drag: look  ·  Esc: stop flying"
+              ? "W A S D / arrows: move  ·  E / Q: up / down  ·  Wheel: speed  ·  drag: look  ·  Esc: stop flying"
               : "Drag: rotate  ·  Ctrl+drag: pan  ·  Wheel: zoom"
     }
     Text {
@@ -280,7 +310,7 @@ Item {
         camera.position = Qt.vector3d(0, 0, radius * 2.6)
         camera.clipNear = radius / 100
         camera.clipFar = radius * 100
-        wasd.speed = radius / 150  // fly speed relative to model size
+        root.baseSpeed = radius / 150  // fly speed relative to model size
         root.gridStep = Math.pow(10, Math.floor(Math.log10(radius)))  // 1 m lines for a 1-5 m model
     }
 }
@@ -799,9 +829,16 @@ def speed_button(apply):
 PANEL_BUTTON_ROOM = 44  # width kept free at the top right for the Details and Tools button
 
 
+@functools.cache
+def bar_height():
+    """Height of a preview's top bar: every preview keeps it, so the content never jumps between files."""
+    return Tray(tool_button("", "", lambda: None, text="Bar")).sizeHint().height()
+
+
 def toolbar(first, *items):
     """`first` takes the free space on the left; each tuple after it becomes a Tray."""
-    row = QHBoxLayout()
+    row = QHBoxLayout(objectName="toolbar")  # Peek looks for it: see set_preview
+    row.addStrut(bar_height())
     row.setSpacing(8)
     row.addWidget(first, 1)
     for item in items:
@@ -3556,11 +3593,13 @@ class SheetView(QWidget):
         self.search.step.connect(lambda delta: self.find(self.search.edit.text(), delta))
         self.matches, self.match = [], -1
 
-        bar = QHBoxLayout()
+        bar = QHBoxLayout(objectName="toolbar")
+        bar.addStrut(bar_height())
         bar.addWidget(self.ref)
         bar.addWidget(self.formula, 1)
         bar.addWidget(self.search.button())
         bar.addWidget(show_hidden)
+        bar.addSpacing(PANEL_BUTTON_ROOM)
 
         for ws in formulas.worksheets:
             self.tabs.addTab(self.build_table(ws, values[ws.title]), ws.title)
@@ -3679,10 +3718,14 @@ class ModelView(QWidget):
         palette = QApplication.palette()
         self.view.setColor(palette.window().color())
         self.quick = QWidget.createWindowContainer(self.view, self)
-        self.view.setInitialProperties({"source": QUrl.fromLocalFile(str(path)), **ModelView.toggles,
+        self.view.setInitialProperties({**ModelView.toggles,
                                          "background": palette.window().color(),
                                          "textColor": palette.text().color()})
         self.view.setSource(QUrl.fromLocalFile(str(qml)))
+        # Loading a model blocks for a moment: draw the empty view first, so the window never sits
+        # half-painted between the old preview and this one
+        self.view.frameSwapped.connect(lambda: QTimer.singleShot(0, lambda: self.view.rootObject().setProperty(
+            "source", QUrl.fromLocalFile(str(path)))), Qt.SingleShotConnection)
         self.flying = False
         self.view.rootObject().animationsReady.connect(self.show_animations)
         self.view.installEventFilter(self)  # Q / E while flying: see eventFilter
@@ -3754,7 +3797,6 @@ class ModelView(QWidget):
         if (obj is self.view and self.flying and event.type() in (QEvent.KeyPress, QEvent.KeyRelease)
                 and not event.isAutoRepeat()):
             root = self.view.rootObject()
-            root.setProperty("fast", bool(event.modifiers() & Qt.ShiftModifier))
             if event.key() in (Qt.Key_Q, Qt.Key_E):
                 pressed = event.type() == QEvent.KeyPress
                 root.setProperty("lift", (1 if event.key() == Qt.Key_E else -1) if pressed else 0)
@@ -3808,7 +3850,7 @@ class ArchiveView(QWidget):
         self.tree.setHeaderLabels(["Name", "Size", "Modified"])
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.summary)
+        layout.addLayout(toolbar(self.summary))
         layout.addWidget(self.tree, 1)
         in_background(lambda: list_archive(path), self, self.fill)
 
@@ -3876,7 +3918,7 @@ class FolderView(QWidget):
         more = QLabel(f"… and {len(children) - FOLDER_ITEMS} more" if len(children) > FOLDER_ITEMS else "")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.summary)
+        layout.addLayout(toolbar(self.summary))
         layout.addWidget(grid, 1)
         layout.addWidget(more)
         self.direct = len(children)
@@ -5247,10 +5289,18 @@ class Peek(QWidget):
         bar.addWidget(self.drag_icon)
         bar.addWidget(self.info, 1)
         bar.addWidget(open_btn)
+        self.bar_room = QWidget()  # stands in for the top bar of previews without one: see set_preview
+        self.bar_room.setFixedHeight(bar_height())
+        column = QVBoxLayout()
+        column.addWidget(self.bar_room)
+        column.addWidget(self.preview, 1)
         body = QHBoxLayout()
-        body.addWidget(self.preview, 1)
+        body.addLayout(column, 1)
         body.addWidget(self.side_box)
         self.layout_ = QVBoxLayout(self)
+        # Only you resize the window: a wider preview or the side panel squeeze the content instead
+        self.layout_.setSizeConstraint(QLayout.SetNoConstraint)
+        self.setMinimumSize(MIN_WINDOW)
         self.layout_.addLayout(body, 1)
         self.layout_.addLayout(bar)
         for w in [self.panel, *self.panel.findChildren(QWidget), self.panel_button, open_btn]:
@@ -5512,6 +5562,7 @@ class Peek(QWidget):
             new.view.rootObject().setProperty("canStep", len(self.files) > 1)
         if isinstance(new, DocView):
             new.editing_changed.connect(self.update_shortcuts)
+        self.bar_room.setVisible(new.findChild(QHBoxLayout, "toolbar") is None)
         self.layout_.replaceWidget(self.preview, new)
         if not new.isAncestorOf(self.video):
             self.video.setParent(None)  # keep it alive when the old preview goes
@@ -5522,6 +5573,8 @@ class Peek(QWidget):
         self.place_arrows()
         self.setFocus()
         self.update_shortcuts()
+        if self.isVisible():
+            self.repaint()  # show the whole new preview now: a 3D view blocks for a moment while it starts
 
     def open_external(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.files[self.index])))

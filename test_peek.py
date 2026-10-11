@@ -13,9 +13,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from PySide6.QtCore import QBuffer, QMimeDatabase, QSize, QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QPageSize, QPainter, QPdfWriter
+from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QPageSize, QPainter, QPdfWriter, QWheelEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QToolButton, QLabel, QPlainTextEdit, QApplication
+from PySide6.QtWidgets import QGraphicsView, QToolButton, QLabel, QPlainTextEdit, QApplication
 
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()  # window size settings go to a throwaway folder
 import peek
@@ -740,6 +740,37 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
     w.close()
 else:
     print("skipped subject picking: onnxruntime or the SAM model is missing")
+
+# The window keeps its size: the side panel and wide previews squeeze the content instead
+w.resize(700, 450)
+show("notes.txt")
+size = w.size()
+w.toggle_side()
+QTest.qWait(100)
+show("img2.png")
+assert w.size() == size, (w.size(), size)
+w.toggle_side()
+# Every preview's content starts below the same top bar, so nothing jumps between files
+show("notes.txt")
+assert w.bar_room.isVisible(), "the text preview has no bar of its own: Peek keeps the room"
+text_top = w.preview.mapTo(w, QPoint(0, 0)).y()
+show("img2.png")
+assert not w.bar_room.isVisible()
+image_top = w.preview.findChild(QGraphicsView).mapTo(w, QPoint(0, 0)).y()
+assert abs(text_top - image_top) <= 2, (text_top, image_top)
+
+# 3D: the model loads once the empty view is drawn; the wheel sets the fly speed, Minecraft style
+(d / "cube.obj").write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nf 1 2 3\nf 1 2 4\nf 1 3 4\nf 2 3 4\n")
+model = show("cube.obj")
+root = model.view.rootObject()
+assert wait(lambda: not root.property("source").isEmpty(), 3000), "the model never started loading"
+model.set_flying(True)
+center = QPointF(model.view.width() / 2, model.view.height() / 2)
+for _ in range(2):  # two notches up
+    QApplication.sendEvent(model.view, QWheelEvent(center, model.view.mapToGlobal(center), QPoint(), QPoint(0, 120),
+                                                   Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
+assert abs(root.property("speedFactor") - 1.44) < 0.01, root.property("speedFactor")
+model.set_flying(False)
 
 # Leaving pictures unloads the AI models: they hold hundreds of MB
 show("img2.png")
