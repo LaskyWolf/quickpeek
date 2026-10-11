@@ -16,6 +16,7 @@ import sqlite3
 import stat
 import struct
 import subprocess
+from array import array
 import sys
 import tarfile
 import threading
@@ -39,7 +40,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtPdf import QPdfDocumentRenderOptions, QPdfDocument, QPdfSearchModel
 from PySide6.QtPdfWidgets import QPdfView
-from PySide6.QtQuickWidgets import QQuickWidget
+from PySide6.QtQuick import QQuickView
 from PySide6.QtWidgets import (QGraphicsBlurEffect, QInputDialog, QMenu, QMessageBox, QSlider, QStyleOptionSlider, QTextEdit, QAbstractItemView, QAbstractScrollArea, QApplication, QButtonGroup, QComboBox,
                                QFrame, QGraphicsDropShadowEffect, QGraphicsEllipseItem, QGraphicsItem,
                                QGraphicsPathItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsTextItem, QGraphicsScene, QGraphicsView,
@@ -84,6 +85,7 @@ CACHE_LIMIT = 500 * 1024 ** 2  # oldest converted files are deleted beyond this
 VIEW_PROPS = Path.home() / ".local/share/dolphin/view_properties"
 MODELS = {".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".dae", ".3ds"}  # Qt's assimp importer
 FONTS = {".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2"}
+KRITA = {".kra", ".krz"}
 X2T = Path("/opt/onlyoffice/desktopeditors/converter/x2t")  # OnlyOffice's document converter
 X2T_FONTS = Path.home() / ".local/share/onlyoffice/desktopeditors/data/fonts"  # made on first launch
 X2T_PDF = 513  # x2t's format code for PDF
@@ -280,7 +282,7 @@ def prune_cache(clean_parts=False):
         for part in CACHE.glob("*.part.*"):
             shutil.rmtree(part) if part.is_dir() else part.unlink(missing_ok=True)
         shutil.rmtree(CACHE / "tmp", ignore_errors=True)
-    files = sorted((p for p in CACHE.iterdir() if p.suffix in {".glb", ".pdf", ".scene", ".json"} and ".part." not in p.name),
+    files = sorted((p for p in CACHE.iterdir() if p.suffix in {".glb", ".pdf", ".png", ".scene", ".json"} and ".part." not in p.name),
                    key=lambda p: p.stat().st_mtime, reverse=True)
     total = 0
     for p in files:
@@ -296,6 +298,23 @@ def blender_command():
         if (root / "app/org.blender.Blender").exists():
             return ["flatpak", "run", "org.blender.Blender"]
     return None
+
+
+def krita_command():
+    if shutil.which("krita"):
+        return [shutil.which("krita")]
+    for root in (Path("/var/lib/flatpak"), Path.home() / ".local/share/flatpak"):
+        if (root / "app/org.kde.krita").exists():
+            return ["flatpak", "run", "--command=krita", "org.kde.krita"]
+    return None
+
+
+def has_merged_image(path):
+    """Krita archives (.krz) and some .kra files store only layers, no flattened picture."""
+    try:
+        return "mergedimage.png" in zipfile.ZipFile(path).namelist()
+    except (OSError, zipfile.BadZipFile):
+        return False
 
 
 def cache_key(path):
@@ -337,6 +356,10 @@ def conversion(path):
         part = CACHE / f"{key}.part.glb"  # renamed when done, so a killed export never looks finished
         script = f"import bpy; bpy.ops.export_scene.gltf(filepath={str(part)!r}, export_format='GLB', export_apply=True)"
         return blender + ["-b", str(path), "--python-expr", script], part, out, None
+    if suffix in KRITA and not has_merged_image(path) and (krita := krita_command()):
+        out = CACHE / f"{key}.png"
+        part = CACHE / f"{key}.part.png"  # inside the home folder: the Krita Flatpak can't see /tmp
+        return krita + ["--export", "--export-filename", str(part), str(path)], part, out, None
     if (suffix in OFFICE | EBOOKS and not (openpyxl and suffix in SHEETS)
             and X2T.exists() and X2T_FONTS.exists()):
         out = CACHE / f"{key}.pdf"
@@ -387,6 +410,14 @@ def blend_thumbnail(path):
             return None
         pos += size_of(h)
     return None
+
+
+def krita_preview(path):
+    """Krita's flattened picture, or the small preview.png every Krita file carries."""
+    z = zipfile.ZipFile(path)
+    names = z.namelist()
+    name = "mergedimage.png" if "mergedimage.png" in names else "preview.png"
+    return QImage.fromData(z.read(name)) if name in names else None
 
 
 def clip_preview(path):
@@ -715,7 +746,7 @@ def vbox(*items, margins=0):
     for item in items:
         if isinstance(item, QWidget):
             layout.addWidget(item, 1 if isinstance(item, (QAbstractItemView, QGraphicsView, QPlainTextEdit,
-                                                          QVideoWidget, QQuickWidget, QPdfView)) else 0)
+                                                          QVideoWidget, QPdfView)) else 0)
         else:
             layout.addLayout(item)
     return box
@@ -1602,6 +1633,46 @@ EDIT_TOOLS = (("select", "edit-select", "Select and move (S) — double-click te
               ("highlight", "draw-highlight", "Highlight text (H) — drag across the words"),
               ("text", "draw-text", "Text (T) — click to write, click a text to change it"))
 KIND, PAGE, SHAPE = 0, 1, 2  # QGraphicsItem.data() keys of a drawing
+PRESSURE = 3  # QGraphicsItem.data() key: pen pressure at each point of a tablet stroke
+
+
+def pressure_width(pressure):
+    """Line width factor: a light touch draws at 0.15×, a full press at 2× the chosen width."""
+    return 0.15 + 1.85 * pressure
+
+
+class PressureStroke(QGraphicsPathItem):
+    """A pen stroke drawn with a tablet: each piece as wide as the pen was pressed there.
+    The pen keeps the color and the chosen width, so restyling works as for any stroke."""
+
+    def boundingRect(self):
+        extra = self.pen().widthF()  # up to 2× the pen width, half on each side
+        return super().boundingRect().adjusted(-extra, -extra, extra, extra)
+
+    def paint(self, painter, option, widget=None):
+        path, pressures, pen = self.path(), self.data(PRESSURE), QPen(self.pen())
+        for i in range(1, min(path.elementCount(), len(pressures))):
+            pen.setWidthF(self.pen().widthF() * pressure_width((pressures[i - 1] + pressures[i]) / 2))
+            painter.setPen(pen)
+            a, b = path.elementAt(i - 1), path.elementAt(i)
+            painter.drawLine(QPointF(a.x, a.y), QPointF(b.x, b.y))
+        if option.state & QStyle.State_Selected:
+            painter.setPen(QPen(option.palette.highlight().color(), 0, Qt.DashLine))
+            painter.drawRect(self.boundingRect())
+
+
+def pressure_runs(points, pressures, width):
+    """Split a tablet stroke into (points, width) runs of about the same width: a PDF ink line has one width."""
+    level = lambda p: round(pressure_width(p) * 4) / 4
+    runs = [([points[0]], level(pressures[0]))]
+    for point, pressure in zip(points[1:], pressures[1:]):
+        run = runs[-1]
+        run[0].append(point)
+        if level(pressure) != run[1]:
+            runs.append(([point], level(pressure)))  # starts where the last run ends: no gap
+    return [(run, width * factor) for run, factor in runs if len(run) > 1]
+
+
 RENDER_ANNOTATIONS = QPdfDocumentRenderOptions()
 RENDER_ANNOTATIONS.setRenderFlags(QPdfDocumentRenderOptions.RenderFlag.Annotations)
 
@@ -1748,6 +1819,7 @@ class PdfCanvas(QGraphicsView):
         self.width_pt = EDIT_WIDTHS["Medium"]
         self.text_size = TEXT_SIZES["Normal"]
         self.drawing = None
+        self.pressure = None  # set while a tablet pen touches the page
         self.fitting = True
         self.render_timer = QTimer(self, singleShot=True, interval=15, timeout=self.render_visible)
         self.verticalScrollBar().valueChanged.connect(self.render_timer.start)
@@ -1861,6 +1933,18 @@ class PdfCanvas(QGraphicsView):
     def page_points(self, page, point):
         return (point - self.pages[page].rect.topLeft()) / EDIT_SCALE
 
+    def viewportEvent(self, event):
+        """Note the pen pressure, then let Qt turn the tablet event into the usual mouse event."""
+        if event.type() in (QEvent.TabletPress, QEvent.TabletMove):
+            self.pressure = event.pressure()
+            event.ignore()
+            return False
+        if event.type() == QEvent.TabletRelease:
+            self.pressure = None
+            event.ignore()
+            return False
+        return super().viewportEvent(event)
+
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton or self.tool == "select":
             return super().mousePressEvent(event)
@@ -1893,8 +1977,12 @@ class PdfCanvas(QGraphicsView):
         else:  # arrow, pen, highlight on a scanned page
             # our own copy of the path: the item drops a path that is only a starting point
             self.path = QPainterPath(pos)
-            item = QGraphicsPathItem(self.path)
             kind = "marker" if self.tool == "highlight" else self.tool
+            if kind == "pen" and self.pressure is not None:
+                item = PressureStroke(self.path)
+                item.setData(PRESSURE, [self.pressure])
+            else:
+                item = QGraphicsPathItem(self.path)
         if kind == "highlight":
             fill = QColor(self.color)
             fill.setAlpha(90)
@@ -1928,6 +2016,8 @@ class PdfCanvas(QGraphicsView):
             self.drawing.setData(SHAPE, boxes)
         else:
             self.path.lineTo(pos)
+            if isinstance(self.drawing, PressureStroke):
+                self.drawing.setData(PRESSURE, self.drawing.data(PRESSURE) + [self.pressure or 0.5])
             self.drawing.setPath(self.path)
 
     def mouseReleaseEvent(self, event):
@@ -2021,6 +2111,10 @@ class PdfCanvas(QGraphicsView):
                 path = item.path()
                 geometry = [points(here(QPointF(path.elementAt(i).x, path.elementAt(i).y)))
                             for i in range(path.elementCount())]
+                if isinstance(item, PressureStroke):
+                    out += [(page, kind, run, color.getRgbF()[:3], run_width, "", 0)
+                            for run, run_width in pressure_runs(geometry, item.data(PRESSURE), width)]
+                    continue
             out.append((page, kind, geometry, color.getRgbF()[:3], width, "", 0))
         return out
 
@@ -2472,15 +2566,19 @@ class ModelView(QWidget):
         qml = CACHE / "viewer.qml"
         if not qml.exists() or qml.read_text() != VIEWER_QML:
             qml.write_text(VIEWER_QML)
-        self.quick = QQuickWidget()
-        self.quick.setResizeMode(QQuickWidget.SizeRootObjectToView)
+        # A QQuickView in a window container, not a QQuickWidget: adding a QQuickWidget makes Qt
+        # rebuild the whole native window, which flashes the window every time a model opens.
+        self.view = QQuickView()
+        self.view.setResizeMode(QQuickView.SizeRootObjectToView)
         palette = QApplication.palette()
-        self.quick.setInitialProperties({"source": QUrl.fromLocalFile(str(path)), **ModelView.toggles,
+        self.view.setColor(palette.window().color())
+        self.quick = QWidget.createWindowContainer(self.view, self)
+        self.view.setInitialProperties({"source": QUrl.fromLocalFile(str(path)), **ModelView.toggles,
                                          "background": palette.window().color(),
                                          "textColor": palette.text().color()})
-        self.quick.setSource(QUrl.fromLocalFile(str(qml)))
+        self.view.setSource(QUrl.fromLocalFile(str(qml)))
         self.flying = False
-        self.quick.rootObject().animationsReady.connect(self.show_animations)
+        self.view.rootObject().animationsReady.connect(self.show_animations)
         in_background(lambda: animated_scene(Path(path)), self, self.load_scene)
 
         self.stats = QLabel()
@@ -2513,7 +2611,7 @@ class ModelView(QWidget):
 
     def load_scene(self, qml):
         if qml:
-            self.quick.rootObject().setProperty("scene", QUrl.fromLocalFile(str(qml)))
+            self.view.rootObject().setProperty("scene", QUrl.fromLocalFile(str(qml)))
 
     def show_animations(self, names):
         self.animation.blockSignals(True)  # filling the list must not restart playback
@@ -2530,23 +2628,23 @@ class ModelView(QWidget):
         self.play_button.blockSignals(False)
         self.play_button.setText("Pause" if playing else "Play")
         self.play_button.setIcon(QIcon.fromTheme("media-playback-pause" if playing else "media-playback-start"))
-        QMetaObject.invokeMethod(self.quick.rootObject(), "playAnimation",
+        QMetaObject.invokeMethod(self.view.rootObject(), "playAnimation",
                                  Q_ARG("QVariant", max(self.animation.currentIndex(), 0)),
                                  Q_ARG("QVariant", playing))
 
     def toggle(self, name, on):
         ModelView.toggles[name] = on
-        self.quick.rootObject().setProperty(name, on)
+        self.view.rootObject().setProperty(name, on)
 
     def recenter(self):
         """Land if flying, then frame the whole model again from the starting angle."""
         self.set_flying(False)
-        QMetaObject.invokeMethod(self.quick.rootObject(), "fit")
+        QMetaObject.invokeMethod(self.view.rootObject(), "fit")
 
     def set_flying(self, on):
         self.flying = on
         self.fly_button.setChecked(on)
-        self.quick.rootObject().setProperty("flying", on)
+        self.view.rootObject().setProperty("flying", on)
         self.quick.setFocusPolicy(Qt.StrongFocus if on else Qt.NoFocus)
         if on:
             self.quick.setFocus()
@@ -2723,6 +2821,16 @@ class MediaPane(QWidget):
         bar.addWidget(self.elapsed)
         bar.addWidget(self.seek, 1)
         bar.addWidget(self.total)
+        player.setPlaybackRate(1.0)  # each file starts at normal speed
+        if not isinstance(content, AudioView):
+            self.speed = QToolButton(text="1×", toolTip="Playback speed", autoRaise=True,
+                                     popupMode=QToolButton.InstantPopup)
+            menu = QMenu(self.speed)
+            for rate in (0.5, 0.75, 1.0, 1.25, 1.5, 2.0):
+                menu.addAction(f"{rate:g}×", lambda r=rate: (player.setPlaybackRate(r),
+                                                            self.speed.setText(f"{r:g}×")))
+            self.speed.setMenu(menu)
+            bar.addWidget(Tray(self.speed))
         sound = Tray(self.mute, self.volume)
         sound.layout().setContentsMargins(3, 3, 9, 3)  # room for the handle at 100%
         bar.addWidget(sound)
@@ -2735,7 +2843,7 @@ class MediaPane(QWidget):
                 w.setFocusPolicy(Qt.NoFocus)  # Space and the arrows keep flipping files
 
         player.playbackStateChanged.connect(self.show_state)
-        player.durationChanged.connect(lambda ms: (self.seek.setMaximum(ms), self.total.setText(clock(ms))))
+        player.durationChanged.connect(self.show_duration)  # a method, not a lambda: Qt disconnects it with the pane
         player.positionChanged.connect(self.show_position)
         audio.mutedChanged.connect(self.show_volume)
         audio.volumeChanged.connect(self.show_volume)
@@ -2756,6 +2864,10 @@ class MediaPane(QWidget):
         playing = self.player.isPlaying()
         self.play.setIcon(QIcon.fromTheme("media-playback-pause" if playing else "media-playback-start"))
 
+    def show_duration(self, ms):
+        self.seek.setMaximum(ms)
+        self.total.setText(clock(ms))
+
     def show_position(self, ms):
         if not self.seek.isSliderDown():  # don't yank the handle out of your hand while dragging
             self.seek.setValue(ms)
@@ -2774,6 +2886,61 @@ class MediaPane(QWidget):
         self.mute.setToolTip("Unmute (M)" if audio.isMuted() else "Mute (M)")
 
 
+def audio_peaks(path, count=600):
+    """Loudest sample in each of `count` slices of the file, 0..1. None without ffmpeg or audio."""
+    if not shutil.which("ffmpeg"):
+        return None
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+                         capture_output=True, timeout=120).stdout
+    samples = array("h", raw[:len(raw) // 2 * 2])
+    if not samples:
+        return None
+    step = max(len(samples) // count, 1)
+    peaks = [max(max(chunk), -min(chunk)) for chunk in (samples[i:i + step] for i in range(0, len(samples), step))]
+    loudest = max(peaks) or 1
+    return [p / loudest for p in peaks]
+
+
+class Waveform(QWidget):
+    """The whole track's loudness as bars; the played part in the accent color. Click or drag to seek."""
+
+    def __init__(self, player, path):
+        super().__init__()
+        self.player = player
+        self.peaks = None
+        self.setMinimumHeight(120)
+        self.setCursor(Qt.PointingHandCursor)
+        player.positionChanged.connect(self.update)
+        in_background(lambda: audio_peaks(path), self, self.got_peaks)
+
+    def got_peaks(self, peaks):
+        self.peaks = peaks
+        self.update()
+
+    def paintEvent(self, event):
+        if not self.peaks:
+            return
+        p = QPainter(self)
+        played = self.palette().highlight().color()
+        rest = self.palette().text().color()
+        rest.setAlphaF(0.3)
+        bars = max(self.width() // 3, 1)  # 2 px bar + 1 px gap
+        duration = self.player.duration()
+        head = self.player.position() / duration * self.width() if duration else 0
+        middle = self.height() / 2
+        for i in range(bars):
+            level = self.peaks[i * len(self.peaks) // bars]
+            half = max(level * middle, 1)
+            p.fillRect(QRectF(i * 3, middle - half, 2, half * 2), played if i * 3 < head else rest)
+
+    def mousePressEvent(self, event):
+        self.mouseMoveEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.LeftButton and self.width():
+            self.player.setPosition(round(event.position().x() / self.width() * self.player.duration()))
+
+
 class AudioView(QWidget):
     """Cover art and tags of the playing file. Click to pause."""
 
@@ -2787,11 +2954,13 @@ class AudioView(QWidget):
         font.setBold(True)
         self.title.setFont(font)
         self.details = QLabel(alignment=Qt.AlignCenter, wordWrap=True)
+        self.wave = Waveform(player, path)
         layout = QVBoxLayout(self)
         layout.addStretch()
         for w in (self.cover, self.title, self.details):
             layout.addWidget(w)
         layout.addStretch()
+        layout.addWidget(self.wave)
         player.metaDataChanged.connect(self.refresh)
         player.durationChanged.connect(self.refresh)
         self.refresh()
@@ -2813,7 +2982,8 @@ class AudioView(QWidget):
         self.details.setText("  ·  ".join(p for p in parts if p))
 
     def mousePressEvent(self, event):
-        self.player.pause() if self.player.isPlaying() else self.player.play()
+        if not self.wave.geometry().contains(event.position().toPoint()):
+            self.player.pause() if self.player.isPlaying() else self.player.play()
 
 
 # ---------------------------------------------------------------- details panel data
@@ -3831,6 +4001,8 @@ def preview_widget(path, mime, player, image=None, on_open=None):
             return FontView(path)
         except ValueError:
             pass
+    if suffix in KRITA and not has_merged_image(path):
+        image = krita_preview(path)  # Qt's kra plugin claims these files but can't read them
     # Any format a Qt image plugin decodes, whatever its mime: kimageformats adds kra, psd, xcf, raw...
     if image is not None and not image.isNull():
         return ImagePane(image, path)
@@ -3860,7 +4032,7 @@ def preview_widget(path, mime, player, image=None, on_open=None):
     return ImagePane(thumb) if thumb else icon_label(mime)
 
 
-EXTRACTORS = {".blend": blend_thumbnail, ".clip": clip_preview}
+EXTRACTORS = {".blend": blend_thumbnail, ".clip": clip_preview, ".kra": krita_preview, ".krz": krita_preview}
 
 
 # ---------------------------------------------------------------- the window
@@ -4120,7 +4292,10 @@ class Peek(QWidget):
             prune_cache()
 
     def show_converted(self, out):
-        self.set_preview(ModelView(out) if out.suffix == ".glb" else DocView(out, self.files[self.index]))
+        if out.suffix == ".png":  # Krita's full-size export
+            self.set_preview(ImagePane(decode_image(out), self.files[self.index]))
+        else:
+            self.set_preview(ModelView(out) if out.suffix == ".glb" else DocView(out, self.files[self.index]))
 
     def set_preview(self, new):
         # Keep keyboard focus on the window, or a text/PDF view would eat the arrow keys.

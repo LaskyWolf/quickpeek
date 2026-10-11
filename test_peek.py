@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from PySide6.QtCore import QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, Qt
+from PySide6.QtCore import QBuffer, QMimeDatabase, QSize, QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, Qt
 from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QPageSize, QPainter, QPdfWriter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QToolButton, QLabel, QPlainTextEdit, QApplication
@@ -269,6 +269,19 @@ assert peek.model_stats(d / "m.obj") == "4 vertices  ·  2 triangles", peek.mode
 for f in (stl, d / "m.obj"):
     f.unlink()
 
+# Krita archives (.krz) have no flattened picture: their preview.png shows first
+with zipfile.ZipFile(d / "art.krz", "w") as z:
+    buffer = QBuffer()
+    buffer.open(QBuffer.WriteOnly)
+    QImage(40, 30, QImage.Format_RGB32).save(buffer, "PNG")
+    z.writestr("mimetype", "application/x-krita")
+    z.writestr("preview.png", bytes(buffer.data()))
+art = peek.preview_widget(str(d / "art.krz"), QMimeDatabase().mimeTypeForFile(str(d / "art.krz")), None)
+assert isinstance(art, peek.ImagePane) and art.image.size() == QSize(40, 30), type(art)
+if peek.krita_command():
+    assert peek.conversion(d / "art.krz")[2].suffix == ".png"
+(d / "art.krz").unlink()
+
 # Dolphin sort order from the folder's .directory: by size, descending, folders first
 (d / ".directory").write_text("[Dolphin]\nSortRole=size\nSortOrder=1\nVersion=4\n")
 order = [p.name for p in peek.siblings(d / "notes.txt")]
@@ -342,6 +355,23 @@ if peek.pymupdf:
     stroke = canvas.history[-1][1][0]
     assert stroke.sceneBoundingRect().left() > canvas.pages[1].rect.left() + 50, "a stray line would start at the corner"
     QTest.keyClick(canvas, Qt.Key_Z, Qt.ControlModifier)  # Undo removes it
+    # Tablet pen: the line widens with pressure, and saves as ink pieces of matching widths
+    a, b = on_page(100, 300), on_page(200, 320)
+    canvas.pressure = 0.1
+    QTest.mousePress(view, Qt.LeftButton, Qt.NoModifier, a)
+    canvas.pressure = 0.5
+    QTest.mouseMove(view, (a + b) / 2)
+    canvas.pressure = 1.0
+    QTest.mouseMove(view, b)
+    QTest.mouseRelease(view, Qt.LeftButton, Qt.NoModifier, b)
+    canvas.pressure = None
+    stroke = canvas.history[-1][1][0]
+    assert isinstance(stroke, peek.PressureStroke) and stroke.data(peek.PRESSURE) == [0.1, 0.5, 1.0]
+    widths = [a[4] for a in canvas.annotations() if a[1] == "pen"]
+    assert len(widths) == 2 and widths[0] < widths[1], widths
+    QTest.keyClick(canvas, Qt.Key_Z, Qt.ControlModifier)
+    assert peek.pressure_runs([(0, 0), (1, 0), (2, 0), (3, 0)], [0.5, 0.5, 1, 1], 2) == \
+        [([(0, 0), (1, 0), (2, 0)], 2.0), ([(2, 0), (3, 0)], 4.0)]
     box, _ = canvas.words(1)[0]  # "page" of "page 2"; the drag reaches the "2"
     QTest.keyClick(canvas, Qt.Key_H)
     drag(on_page(box.left() + 1, box.center().y()), on_page(box.right() + 30, box.center().y()))
@@ -406,8 +436,23 @@ if shutil.which("ffmpeg"):
     QTest.keyClick(w, Qt.Key_M)
     assert w.player.audioOutput().isMuted() and pane.mute.toolTip() == "Unmute (M)"
     QTest.keyClick(w, Qt.Key_M)
+    wave = pane.findChild(peek.Waveform)
+    assert not hasattr(pane, "speed"), "speed is for videos only"
+    assert wait(lambda: wave.peaks), "no waveform"
+    assert len(wave.peaks) >= 500 and max(wave.peaks) == 1
+    QTest.mouseClick(wave, Qt.LeftButton, Qt.NoModifier, QPoint(wave.width() // 4, wave.height() // 2))
+    assert wait(lambda: abs(w.player.position() - 1000) < 300), w.player.position()
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=d=2:s=64x48", str(d / "clip.mp4")],
+                   check=True)
+    pane = show("clip.mp4")
+    assert pane.findChild(peek.Waveform) is None and pane.speed.text() == "1×"
+    pane.speed.menu().actions()[-1].trigger()
+    assert w.player.playbackRate() == 2 and pane.speed.text() == "2×"
+    pane = show("tone.wav")
+    assert w.player.playbackRate() == 1, "each file starts at normal speed"
     w.close()
     (d / "tone.wav").unlink()
+    (d / "clip.mp4").unlink()
 else:
     print("skipped player check: ffmpeg not installed")
 
