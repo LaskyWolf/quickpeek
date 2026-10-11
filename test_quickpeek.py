@@ -12,8 +12,8 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from PySide6.QtCore import QObject, QBuffer, QMimeDatabase, QSize, QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QPageSize, QPainter, QPdfWriter, QWheelEvent
+from PySide6.QtCore import QEvent, QObject, QBuffer, QMimeDatabase, QSize, QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QPageSize, QPainter, QPdfWriter, QWheelEvent, QMouseEvent, QKeyEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QGraphicsView, QToolButton, QLabel, QPlainTextEdit, QApplication
 
@@ -774,6 +774,22 @@ for _ in range(2):  # two notches up
     QApplication.sendEvent(model.view, QWheelEvent(center, model.view.mapToGlobal(center), QPoint(), QPoint(0, 120),
                                                    Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
 assert abs(root.property("speedFactor") - 1.44) < 0.01, root.property("speedFactor")
+QApplication.sendEvent(model.view, QMouseEvent(QEvent.MouseButtonPress, center, model.view.mapToGlobal(center),
+                                               Qt.MiddleButton, Qt.MiddleButton, Qt.NoModifier))
+assert root.property("speedFactor") == 1, "the middle button resets the speed"
+fly_cam = root.findChild(QObject, "flyCam")
+
+
+def hold(key):
+    start = fly_cam.property("position")
+    QApplication.sendEvent(model.view, QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier))
+    QTest.qWait(150)
+    QApplication.sendEvent(model.view, QKeyEvent(QEvent.KeyRelease, key, Qt.NoModifier))
+    return fly_cam.property("position") != start
+
+
+assert hold(Qt.Key_W), "W moves"
+assert not hold(Qt.Key_Up), "the arrow keys don't move while flying"
 fly_speed = root.findChild(QObject, "wasd")
 assert fly_speed.property("shiftSpeed") == fly_speed.property("speed"), "Shift must not change the speed"
 model.set_flying(False)

@@ -86,6 +86,10 @@ pymupdf = lazy_import("pymupdf")
 # GStreamer plays short sounds fine; Qt's default FFmpeg backend freezes on them (Qt 6.12)
 if (Path(QLibraryInfo.path(QLibraryInfo.PluginsPath)) / "multimedia/libgstreamermediaplugin.so").exists():
     os.environ.setdefault("QT_MEDIA_BACKEND", "gstreamer")
+# Draw Qt Quick (the 3D view) on the main thread. Its own render thread calls into PySide objects, which
+# needs Python's lock; when the main thread holds that lock while waiting for the render thread (showing
+# or hiding a 3D view from Python), both wait forever and the app is killed as frozen.
+os.environ.setdefault("QSG_RENDER_LOOP", "basic")
 SOCKET = f"quickpeek-{os.getuid()}"  # one quickpeek window per user; later launches hand their file to it
 
 TEXT_LIMIT = 1_000_000  # bytes shown for text files, so a 2 GB log doesn't freeze the window
@@ -257,7 +261,7 @@ Item {
         color: root.textColor
         opacity: 0.7
         text: root.flying
-              ? "W A S D / arrows: move  ·  E / Q: up / down  ·  Wheel: speed  ·  drag: look  ·  Esc: stop flying"
+              ? "W A S D: move  ·  E / Q: up / down  ·  Wheel: speed  ·  Middle click: normal speed  ·  drag: look  ·  Esc: stop flying"
               : "Drag: rotate  ·  Ctrl+drag: pan  ·  Wheel: zoom"
     }
     Text {
@@ -269,7 +273,11 @@ Item {
 
     // The wheel while flying, like Minecraft's spectator mode: each notch is 20% faster or slower
     function changeSpeed(notches) {
-        root.speedFactor = Math.min(Math.max(root.speedFactor * Math.pow(1.2, notches), 0.05), 50)
+        setSpeed(Math.min(Math.max(root.speedFactor * Math.pow(1.2, notches), 0.05), 50))
+    }
+
+    function setSpeed(factor) {  // also the middle button: back to 1
+        root.speedFactor = factor
         speedNote.opacity = 1
         speedFade.restart()
     }
@@ -3721,9 +3729,9 @@ class ModelView(QWidget):
                                          "textColor": palette.text().color()})
         self.view.setSource(QUrl.fromLocalFile(str(qml)))
         # Loading a model blocks for a moment: draw the empty view first, so the window never sits
-        # half-painted between the old preview and this one
-        self.view.frameSwapped.connect(lambda: QTimer.singleShot(0, lambda: self.view.rootObject().setProperty(
-            "source", QUrl.fromLocalFile(str(path)))), Qt.SingleShotConnection)
+        # half-painted between the old preview and this one. Queued: load once that frame is out.
+        self.path = path
+        self.view.frameSwapped.connect(self.load_model, Qt.ConnectionType(Qt.QueuedConnection.value | Qt.SingleShotConnection.value))
         self.flying = False
         self.view.rootObject().animationsReady.connect(self.show_animations)
         self.view.installEventFilter(self)  # Q / E while flying: see eventFilter
@@ -3758,6 +3766,9 @@ class ModelView(QWidget):
         layout.addLayout(bar)
         layout.addWidget(self.quick, 1)
 
+    def load_model(self):
+        self.view.rootObject().setProperty("source", QUrl.fromLocalFile(str(self.path)))
+
     def load_scene(self, qml):
         if qml:
             self.view.rootObject().setProperty("scene", QUrl.fromLocalFile(str(qml)))
@@ -3791,17 +3802,24 @@ class ModelView(QWidget):
         QMetaObject.invokeMethod(self.view.rootObject(), "fit")
 
     def eventFilter(self, obj, event):
-        """While flying: hold E to rise, Q to sink (the QML moves the camera every frame); the wheel sets the speed."""
-        if obj is self.view and self.flying and event.type() == QEvent.Wheel:
-            QMetaObject.invokeMethod(self.view.rootObject(), "changeSpeed", Q_ARG("QVariant", event.angleDelta().y() / 120))
+        """While flying: hold E to rise, Q to sink (the QML moves the camera every frame); the wheel sets the
+        speed and the middle button resets it; the arrow keys do nothing (WASD moves)."""
+        if obj is not self.view or not self.flying:
+            return False
+        root = self.view.rootObject()
+        if event.type() == QEvent.Wheel:
+            QMetaObject.invokeMethod(root, "changeSpeed", Q_ARG("QVariant", event.angleDelta().y() / 120))
             return True
-        if (obj is self.view and self.flying and event.type() in (QEvent.KeyPress, QEvent.KeyRelease)
+        if event.type() == QEvent.MouseButtonPress and event.button() == Qt.MiddleButton:
+            QMetaObject.invokeMethod(root, "setSpeed", Q_ARG("QVariant", 1.0))
+            return True
+        if event.type() in (QEvent.KeyPress, QEvent.KeyRelease) and event.key() in (Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
+            return True
+        if (event.type() in (QEvent.KeyPress, QEvent.KeyRelease) and event.key() in (Qt.Key_Q, Qt.Key_E)
                 and not event.isAutoRepeat()):
-            root = self.view.rootObject()
-            if event.key() in (Qt.Key_Q, Qt.Key_E):
-                pressed = event.type() == QEvent.KeyPress
-                root.setProperty("lift", (1 if event.key() == Qt.Key_E else -1) if pressed else 0)
-                return True
+            pressed = event.type() == QEvent.KeyPress
+            root.setProperty("lift", (1 if event.key() == Qt.Key_E else -1) if pressed else 0)
+            return True
         return False
 
     def set_flying(self, on):
