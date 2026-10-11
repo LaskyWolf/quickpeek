@@ -741,6 +741,15 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
 else:
     print("skipped subject picking: onnxruntime or the SAM model is missing")
 
+# Leaving pictures unloads the AI models: they hold hundreds of MB
+show("img2.png")
+QTest.qWait(1200)  # windows from earlier checks finish their own cleanup first
+peek._sessions["model"] = object()
+w.trim()
+assert peek._sessions, "kept while on a picture"
+show("notes.txt")
+assert wait(lambda: not peek._sessions, 3000), "unloaded after leaving pictures"
+
 # Revit and Affinity files show the PNG preview they carry; presentations show their saved first slide
 sample = QImage(40, 30, QImage.Format_RGB32)
 sample.fill(QColor("orange"))

@@ -5204,7 +5204,7 @@ class Peek(QWidget):
         self.preview = QWidget()
         self.files, self.index = [], 0
         self.preloaded = {}  # path -> Future[QImage] for the neighbours of the shown file
-        self.trimmer = QTimer(self, singleShot=True, interval=1000, timeout=trim_memory)
+        self.trimmer = QTimer(self, singleShot=True, interval=1000, timeout=self.trim)
         self.player = QMediaPlayer(self)
         self.video = QVideoWidget()  # one for every video: Qt leaks ~1 MB per QVideoWidget it deletes
         self.player.setAudioOutput(QAudioOutput(self.player))
@@ -5406,6 +5406,11 @@ class Peek(QWidget):
         if pos < self.last_pos and self.player.duration() - self.last_pos < 1500:  # wrapped at the end, not a seek
             self.player.pause()
         self.last_pos = pos
+
+    def trim(self):
+        if not isinstance(self.preview, ImagePane):
+            _sessions.clear()  # the AI models take hundreds of MB; a picture reloads them in about a second
+        trim_memory()
 
     def vertical(self, delta):
         """↑ / ↓ move between slides in a presentation, between files everywhere else."""
