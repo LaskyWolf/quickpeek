@@ -502,7 +502,11 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
     QTest.qWaitForWindowActive(w)
     pane = w.preview
     QTest.keyClick(w, Qt.Key_S)
-    pane.picked(QPointF(400, 400), Qt.NoModifier)  # clicked before the picture is read: waits its turn
+    pane.picked(QPointF(400, 400), Qt.NoModifier)  # clicked while the picture is read: ignored
+    assert not pane.pending
+    assert wait(lambda: pane.segmenter is not None, 120000), pane.subject_status.text()
+    assert pane.mask is None
+    pane.picked(QPointF(400, 400), Qt.NoModifier)
     assert wait(lambda: pane.mask is not None, 60000), pane.subject_status.text()
     settled = lambda: pane.segmenter.edges is not None and not pane.busy and not pane.pending
     assert wait(settled, 120000), pane.subject_status.text()  # the edge model sharpened the outline
@@ -547,6 +551,7 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
     QTest.qWaitForWindowActive(w)
     pane = w.preview
     QTest.keyClick(w, Qt.Key_S)
+    assert wait(lambda: pane.segmenter is not None, 120000)
     pane.picked(QPointF(600, 500), Qt.NoModifier)
     assert wait(lambda: pane.mask is not None, 60000)
     assert wait(lambda: pane.segmenter.edges is not None and not pane.busy and not pane.pending, 120000)

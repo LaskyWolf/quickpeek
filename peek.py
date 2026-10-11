@@ -1118,7 +1118,7 @@ class ImagePane(QWidget):
             return
         if self.segmenter:
             self.subject_status.setText(self.HINT)
-        elif not self.ticker.isActive():  # read the picture once; clicks made meanwhile wait in `pending`
+        elif not self.ticker.isActive():  # read the picture once
             self.subject_status.setText("Starting…")
             self.ticker.start()
             image, progress = self.image, self.progress
@@ -1156,8 +1156,8 @@ class ImagePane(QWidget):
                 self.next_pick()
 
     def picked(self, point, modifiers):
-        if not self.subject_button.isChecked():
-            return
+        if not self.subject_button.isChecked() or not self.segmenter:
+            return  # still reading the picture: clicks made now are ignored, not saved for later
         mode = "add" if modifiers & Qt.ShiftModifier else "remove" if modifiers & Qt.ControlModifier else "new"
         if not QRectF(self.image.rect()).contains(point):
             if mode == "new" and self.parts:
@@ -1166,8 +1166,6 @@ class ImagePane(QWidget):
             return
         self.pending = [p for p in self.pending if p[2] != "reach"]  # the click redoes the mask anyway
         self.pending.append((int(point.x()), int(point.y()), mode, self.brush_size()))
-        if not self.segmenter:
-            self.subject_status.setText("Click noted, still reading the picture…")
         self.next_pick()
 
     def next_pick(self):
@@ -3148,17 +3146,6 @@ def matte(image, progress):
     return (out - out.min()) / (out.max() - out.min() + 1e-8)  # 0 = background, 1 = subject
 
 
-def remove_background(image, progress):
-    """The image with everything but the main subject made transparent. Worker thread."""
-    import numpy as np  # imported here: these load slowly, and most previews never need them
-    mask = matte(image, progress)
-    alpha = QImage((mask * 255).astype(np.uint8).tobytes(), 1024, 1024, 1024, QImage.Format_Grayscale8)
-    alpha = alpha.scaled(image.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-    result = image.convertToFormat(QImage.Format_ARGB32)
-    result.setAlphaChannel(alpha)
-    return result
-
-
 def upscale_array(a, height, width):
     """Bilinear resize of a 2-D numpy array."""
     import numpy as np
@@ -3369,7 +3356,6 @@ def upscale(path, scale, dst, progress):
 
 
 AI_TARGETS = {  # Tools panel entries: code -> (format shown, label, file name suffix)
-    "nobg": ("PNG", "background removed (AI)", " (no background)"),
     "up2": ("PNG", "2× bigger (AI)", " (2x)"),
     "up4": ("PNG", "4× bigger (AI)", " (4x)"),
 }
@@ -3381,12 +3367,9 @@ def has_onnx():
 
 
 def ai_image_targets():
-    targets = []
-    if has_onnx():
-        targets.append(("nobg", AI_TARGETS["nobg"][1]))
     if shutil.which("waifu2x-ncnn-vulkan") and waifu2x_models():
-        targets += [("up2", AI_TARGETS["up2"][1]), ("up4", AI_TARGETS["up4"][1])]
-    return targets
+        return [("up2", AI_TARGETS["up2"][1]), ("up4", AI_TARGETS["up4"][1])]
+    return []
 
 
 # ---------------------------------------------------------------- convert panel data
@@ -3488,11 +3471,7 @@ def convert_file(path, ext, name=None, progress=None):
     stem = path.name[:-len(".tar" + path.suffix)] if path.name.lower().endswith(".tar" + suffix) else path.stem
     if ext in AI_TARGETS:
         dst = free_path(path.parent, stem + AI_TARGETS[ext][2], ".png")
-        if ext == "nobg":
-            if not remove_background(decode_image(path), progress).save(str(dst)):
-                raise RuntimeError("could not write the PNG")
-        else:
-            upscale(path, int(ext[2:]), dst, progress)
+        upscale(path, int(ext[2:]), dst, progress)
         return dst
     if ext == "/":  # archive: extract into a new folder
         dst = free_path(path.parent, stem, "")
