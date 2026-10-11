@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from PySide6.QtCore import QBuffer, QMimeDatabase, QSize, QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, Qt
+from PySide6.QtCore import QBuffer, QMimeDatabase, QSize, QTimer, QUrl, QLocale, QModelIndex, QPoint, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QPageSize, QPainter, QPdfWriter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QToolButton, QLabel, QPlainTextEdit, QApplication
@@ -458,6 +458,67 @@ if peek.pymupdf:
     (d / "doc (edited).pdf").unlink()
 else:
     print("skipped PDF editor: pymupdf not installed")
+
+# Word files read as pages: drag selects text across lines, a click on a picture offers Copy / Save
+if peek.pymupdf:
+    pdf = QPdfWriter(str(d / "word.pdf"))
+    pdf.setPageSize(QPageSize(QPageSize.A4))
+    pdf.setResolution(72)
+    p = QPainter(pdf)
+    from PySide6.QtGui import QFont
+    font = QFont("DejaVu Sans")
+    font.setPixelSize(12)
+    p.setFont(font)
+    p.drawText(QRectF(60, 100, 470, 80), Qt.TextWordWrap, "The first paragraph is long enough to wrap onto a "
+               "second line, so copying it must join the lines with a space instead of a break.")
+    p.drawText(60, 190, "Short one.")
+    picture = QImage(120, 80, QImage.Format_RGB32)
+    picture.fill(QColor("teal"))
+    p.drawImage(QRectF(60, 230, 120, 80), picture)
+    pdf.newPage()
+    p.drawText(60, 80, "Page two")
+    p.end()
+    (d / "word.docx").write_bytes(b"")
+    w.close()
+    w = peek.Peek(d / "word.docx")
+    w.show()
+    QTest.qWaitForWindowActive(w)
+    w.set_preview(peek.WordView(d / "word.pdf", d / "word.docx"))
+    view, reader = w.preview, w.preview.reader
+    QTest.qWait(100)
+
+    def at(page, x, y):
+        return reader.mapFromScene(reader.pages[page].rect.topLeft() + QPointF(x, y) * peek.EDIT_SCALE)
+    QTest.mousePress(reader.viewport(), Qt.LeftButton, Qt.NoModifier, at(0, 62, 110))
+    QTest.mouseMove(reader.viewport(), at(0, 300, 140))
+    QTest.mouseMove(reader.viewport(), at(1, 160, 76))  # into the next page, past the line end
+    QTest.mouseRelease(reader.viewport(), Qt.LeftButton, Qt.NoModifier, at(1, 160, 76))
+    text = reader.selection_text()
+    assert text.startswith("The first paragraph") and " second line" in text, text
+    assert text.endswith("break.\nShort one.\nPage two"), text
+    assert view.card.isVisible()
+    QTest.keyClick(w, Qt.Key_C, Qt.ControlModifier)
+    assert QApplication.clipboard().text() == text
+    QTest.keyClick(w, Qt.Key_Escape)  # closes the card, then drops the selection, then the window
+    QTest.keyClick(w, Qt.Key_Escape)
+    assert not view.card.isVisible() and not reader.selection and w.isVisible()
+    QTest.mouseClick(reader.viewport(), Qt.LeftButton, Qt.NoModifier, at(0, 100, 270))  # the picture
+    assert view.card.isVisible() and reader.picture(0, 0).size() == QSize(120, 80)
+    save = next(b for b in view.card.findChildren(peek.QPushButton) if b.text() == "Save")
+    save.click()
+    assert (d / "word picture 1-1.png").exists() and "word picture 1-1.png" in view.status.text()
+    view.search.open_bar()
+    QTest.keyClicks(view.search.edit, "Page two")
+    assert view.search.label.text() == "1 of 1", view.search.label.text()
+    view.search.close_bar()
+    for name in ("word.pdf", "word.docx", "word picture 1-1.png"):
+        (d / name).unlink()
+    w.close()
+    w = peek.Peek(d / "img10.png")
+    w.show()
+    QTest.qWaitForWindowActive(w)
+else:
+    print("skipped Word reader: pymupdf not installed")
 
 # Player bar: duration, play/pause with K, seeking, mute
 if shutil.which("ffmpeg"):

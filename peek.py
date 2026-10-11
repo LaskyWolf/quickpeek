@@ -42,7 +42,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtPdf import QPdfDocumentRenderOptions, QPdfDocument, QPdfSearchModel
 from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtQuick import QQuickView
-from PySide6.QtWidgets import (QGraphicsBlurEffect, QGraphicsOpacityEffect, QInputDialog, QMenu, QMessageBox, QSlider, QStyleOptionSlider, QTextEdit, QAbstractItemView, QAbstractScrollArea, QApplication, QButtonGroup, QComboBox,
+from PySide6.QtWidgets import (QLayout, QGraphicsBlurEffect, QGraphicsOpacityEffect, QInputDialog, QMenu, QMessageBox, QSlider, QStyleOptionSlider, QTextEdit, QAbstractItemView, QAbstractScrollArea, QApplication, QButtonGroup, QComboBox,
                                QFrame, QGraphicsDropShadowEffect, QGraphicsEllipseItem, QGraphicsItem,
                                QGraphicsPathItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsTextItem, QGraphicsScene, QGraphicsView,
                                QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit,
@@ -865,18 +865,48 @@ class SearchBar(QFrame):
         return False
 
 
-class TextPopup(QFrame):
-    """A found text in a card floating next to it over `host`: select part of it, or copy it all."""
+class Card(QFrame):
+    """A small floating card over the graphics view `host`, kept next to `anchor` (a scene rect)."""
 
-    def __init__(self, host, copy_all):
+    def __init__(self, host):
         super().__init__(host)
         self.host = host
-        self.anchor = QRectF()  # scene rect of the text it belongs to
+        self.anchor = QRectF()
         self.setFrameShape(QFrame.StyledPanel)
         self.setAutoFillBackground(True)
         shadow = QGraphicsDropShadowEffect(self, blurRadius=18, offset=QPointF(0, 3))
         shadow.setColor(QColor(0, 0, 0, 90))
         self.setGraphicsEffect(shadow)
+        for bar in (host.horizontalScrollBar(), host.verticalScrollBar()):
+            bar.valueChanged.connect(lambda _: self.place())  # follows its anchor while scrolling
+        self.hide()
+
+    def place(self):
+        """Just below its anchor, or above when there's no room; always inside the view."""
+        if not self.isVisible():
+            return
+        self.adjustSize()
+        view = self.host
+        rect = view.mapFromScene(self.anchor).boundingRect()
+        top = view.viewport().mapTo(view, rect.bottomLeft()).y() + 8
+        if top + self.height() > view.height() - 8:
+            top = view.viewport().mapTo(view, rect.topLeft()).y() - self.height() - 8
+        left = view.viewport().mapTo(view, rect.topLeft()).x()
+        self.move(min(max(left, 8), max(view.width() - self.width() - 8, 8)),
+                  min(max(top, 8), max(view.height() - self.height() - 8, 8)))
+
+    def open_at(self, anchor):
+        self.anchor = anchor
+        self.show()
+        self.raise_()
+        self.place()
+
+
+class TextPopup(Card):
+    """A found text in a card floating next to it over `host`: select part of it, or copy it all."""
+
+    def __init__(self, host, copy_all):
+        super().__init__(host)
         self.label = QLabel(wordWrap=True, textFormat=Qt.PlainText,
                             textInteractionFlags=Qt.TextSelectableByMouse, cursor=Qt.IBeamCursor)
         self.label.setMaximumWidth(420)
@@ -893,33 +923,15 @@ class TextPopup(QFrame):
         layout.setContentsMargins(12, 10, 8, 8)
         layout.addWidget(self.label)
         layout.addLayout(buttons)
-        self.hide()
 
     def open(self, text, anchor):
         self.label.setText(text)
         self.copy.setText("Copy")
-        self.anchor = anchor
-        self.show()
-        self.raise_()
-        self.place()
+        self.open_at(anchor)
 
     def copy_text(self):
         QApplication.clipboard().setText(self.label.selectedText() or self.label.text())
         self.copy.setText("Copied")
-
-    def place(self):
-        """Just below its text, or above when there's no room; always inside the view."""
-        if not self.isVisible():
-            return
-        self.adjustSize()
-        view = self.host
-        rect = view.mapFromScene(self.anchor).boundingRect()
-        top = view.viewport().mapTo(view, rect.bottomLeft()).y() + 8
-        if top + self.height() > view.height() - 8:
-            top = view.viewport().mapTo(view, rect.topLeft()).y() - self.height() - 8
-        left = view.viewport().mapTo(view, rect.topLeft()).x()
-        self.move(min(max(left, 8), max(view.width() - self.width() - 8, 8)),
-                  min(max(top, 8), max(view.height() - self.height() - 8, 8)))
 
 
 class NavArrow(QWidget):
@@ -1283,8 +1295,6 @@ class ImagePane(QWidget):
         self.view.clicked.connect(self.text_clicked)
         self.view.hovered.connect(self.hover_text)
         self.view.zoomed.connect(lambda _: self.popup.place())
-        for bar in (self.view.horizontalScrollBar(), self.view.verticalScrollBar()):
-            bar.valueChanged.connect(lambda _: self.popup.place())  # follows its text while panning
         self.search = SearchBar(self.view, self)
         self.search.changed.connect(lambda text: self.find(text, 0))
         self.search.step.connect(lambda delta: self.find(self.search.edit.text(), delta))
@@ -2061,15 +2071,23 @@ def page_words(page):
 
 def words_between(words, start, end):
     """The line boxes covering the words from the one nearest `start` to the one nearest `end`, like a text selection."""
-    def nearest(point):
-        def distance(box):
-            dx = max(box.left() - point.x(), 0, point.x() - box.right())
-            dy = max(box.top() - point.y(), 0, point.y() - box.bottom())
-            return dy * 4 + dx  # lines matter more than columns
-        return min(range(len(words)), key=lambda i: distance(words[i][0]))
-    first, last = sorted((nearest(start), nearest(end)))
+    first, last = sorted((nearest_word(words, start), nearest_word(words, end)))
+    return line_boxes(words[first:last + 1])
+
+
+def nearest_word(words, point):
+    """Index of the word box nearest `point`, preferring the same line."""
+    def distance(box):
+        dx = max(box.left() - point.x(), 0, point.x() - box.right())
+        dy = max(box.top() - point.y(), 0, point.y() - box.bottom())
+        return dy * 4 + dx  # lines matter more than columns
+    return min(range(len(words)), key=lambda i: distance(words[i][0]))
+
+
+def line_boxes(words):
+    """One box per line, around that line's words: what a text selection paints."""
     lines = {}
-    for box, line in words[first:last + 1]:
+    for box, line in words:
         lines[line] = lines[line].united(box) if line in lines else box
     return list(lines.values())
 
@@ -2501,6 +2519,331 @@ def write_annotations(src, annotations, dst):
         annot.update()
     doc.save(dst, garbage=1, deflate=True)
     return dst
+
+
+class PageReader(PdfCanvas):
+    """Pages as they print, for reading: drag across words to select them, click a picture to copy or save it.
+    `fz`: the same PDF opened in PyMuPDF, which knows where each word and picture sits."""
+    text_selected = Signal(QRectF)  # scene rect of a finished drag selection
+    picture_clicked = Signal(int, int)  # page, picture number on it
+
+    def __init__(self, doc, fz):
+        self.fz = fz
+        self.cache = {}
+        super().__init__(doc, lambda page: self.page_data(page)[0])
+        self.tool = "read"
+        self.viewport().setCursor(Qt.IBeamCursor)
+        self.setMouseTracking(True)
+        self.anchor = None  # (page, word) where the drag started
+        self.selection = []  # [(page, first word, last word)]
+        self.marks = []  # the selection's highlight boxes
+        self.found = []  # search hits: [(page, scene rect)]
+        self.found_marks = []
+        accent = self.palette().highlight().color()
+        self.mark_color = QColor(accent)
+        self.mark_color.setAlpha(90)
+        edge = QPen(accent, 2)
+        edge.setCosmetic(True)
+        self.hover_box = self.scene().addRect(QRectF(), edge)
+        self.hover_box.setZValue(2)
+        self.hover_box.hide()
+
+    def page_data(self, page):
+        """(word boxes with line ids, word texts, picture boxes) of a page, in PDF points as displayed."""
+        if page not in self.cache:
+            fz = self.fz[page]
+            turn = fz.rotation_matrix
+            words, texts = [], []
+            # ligatures split back into letters: "ﬁrst" pastes as "first"
+            flags = pymupdf.TEXTFLAGS_WORDS & ~pymupdf.TEXT_PRESERVE_LIGATURES
+            for x0, y0, x1, y1, text, block, line, _ in fz.get_text("words", sort=True, flags=flags):
+                box = pymupdf.Rect(x0, y0, x1, y1) * turn
+                words.append((QRectF(box.x0, box.y0, box.width, box.height), (block, line)))
+                texts.append(text)
+            pictures = []
+            for info in fz.get_image_info():
+                box = pymupdf.Rect(info["bbox"]) * turn
+                if box.width > 8 and box.height > 8:  # skip hairlines and bullets
+                    pictures.append((QRectF(box.x0, box.y0, box.width, box.height), info))
+            self.cache[page] = (words, texts, pictures)
+        return self.cache[page]
+
+    def to_scene(self, page, box):
+        return QRectF(self.pages[page].rect.topLeft() + box.topLeft() * EDIT_SCALE, box.size() * EDIT_SCALE)
+
+    def picture_at(self, pos):
+        page = self.page_at(pos)
+        if page is None:
+            return None
+        point = self.page_points(page, pos)
+        return next(((page, n) for n, (box, _) in enumerate(self.page_data(page)[2]) if box.contains(point)), None)
+
+    def word_at(self, pos):
+        """(page, word) nearest `pos`, on the page under it or the nearest one; None on a page without text."""
+        page = self.page_at(pos)
+        if page is None:
+            page = min(range(len(self.pages)), key=lambda i: abs(self.pages[i].rect.center().y() - pos.y()))
+        words = self.page_data(page)[0]
+        return (page, nearest_word(words, self.page_points(page, pos))) if words else None
+
+    def picture(self, page, n):
+        """Picture `n` of `page` at its own resolution, cropped and masked as on the page."""
+        box, info = self.page_data(page)[2][n]
+        clip = pymupdf.Rect(info["bbox"])
+        scale = min(max(info["width"] / max(clip.width, 1), 1), 4)
+        pixmap = self.fz[page].get_pixmap(matrix=pymupdf.Matrix(scale, scale), clip=clip)
+        return QImage.fromData(pixmap.tobytes("png"))
+
+    # ---- selecting
+
+    def select(self, start, end):
+        """Words from `start` to `end`, each a (page, word), across pages."""
+        (p0, w0), (p1, w1) = sorted((start, end))
+        self.clear_selection()
+        for page in range(p0, p1 + 1):
+            count = len(self.page_data(page)[0])
+            if count:
+                self.selection.append((page, w0 if page == p0 else 0, w1 if page == p1 else count - 1))
+        for page, first, last in self.selection:
+            for box in line_boxes(self.page_data(page)[0][first:last + 1]):
+                item = self.scene().addRect(self.to_scene(page, box), Qt.NoPen, self.mark_color)
+                item.setZValue(1)
+                self.marks.append(item)
+
+    def clear_selection(self):
+        for item in self.marks:
+            self.scene().removeItem(item)
+        self.marks, self.selection = [], []
+
+    def selection_text(self):
+        """The selected words: wrapped lines joined with spaces, paragraphs and pages on new lines."""
+        parts, previous = [], None
+        for page, first, last in self.selection:
+            words, texts, _ = self.page_data(page)
+            lines = {}
+            for box, line in words:
+                lines[line] = lines[line].united(box) if line in lines else box
+            left = min(box.left() for box in lines.values())
+            # the text column's right edge: the longest line, or the page's width minus the left margin
+            right = max(*(box.right() for box in lines.values()), self.pages[page].rect.width() / EDIT_SCALE - left)
+            for i in range(first, last + 1):
+                line = words[i][1]
+                if not parts:
+                    parts.append(texts[i])
+                elif (page, line) == previous:
+                    parts.append(" " + texts[i])
+                else:
+                    # ponytail: a paragraph ends at a new block, a gap above the line, or a short line before it.
+                    # Two-column pages and justified last lines can fool it; upgrade path: OnlyOffice's own text.
+                    before = lines.get(previous[1]) if previous[0] == page else None
+                    box = lines[line]
+                    ends = (before is None or line[0] != previous[1][0]
+                            or box.top() - before.bottom() > 0.35 * box.height()
+                            or before.right() < right - 0.15 * (right - left))
+                    parts.append(("\n" if ends else " ") + texts[i])
+                previous = (page, line)
+        return "".join(parts)
+
+    def selection_rect(self):
+        rect = QRectF()
+        for item in self.marks:
+            rect = rect.united(item.rect())
+        return rect
+
+    def mousePressEvent(self, event):
+        if event.button() != Qt.LeftButton:
+            return QGraphicsView.mousePressEvent(self, event)
+        pos = self.mapToScene(event.position().toPoint())
+        self.pressed = event.position()
+        self.click = pos
+        if picture := self.picture_at(pos):
+            self.anchor = None
+            self.clear_selection()
+            self.picture_clicked.emit(*picture)
+            return
+        self.anchor = self.word_at(pos) if self.page_at(pos) is not None else None
+        self.clear_selection()
+
+    def mouseMoveEvent(self, event):
+        pos = self.mapToScene(event.position().toPoint())
+        if self.anchor and event.buttons() & Qt.LeftButton:
+            if (end := self.word_at(pos)) and (event.position() - self.pressed).manhattanLength() > 3:
+                self.select(self.anchor, end)
+            return
+        picture = self.picture_at(pos)
+        self.hover_box.setVisible(picture is not None)
+        if picture:
+            self.hover_box.setRect(self.to_scene(picture[0], self.page_data(picture[0])[2][picture[1]][0]))
+        self.viewport().setCursor(Qt.PointingHandCursor if picture else
+                                  Qt.IBeamCursor if self.page_at(pos) is not None else Qt.ArrowCursor)
+
+    def mouseReleaseEvent(self, event):
+        if self.anchor and self.selection:
+            self.text_selected.emit(self.selection_rect())
+        self.anchor = None
+
+    def mouseDoubleClickEvent(self, event):
+        """Double-click: just that word."""
+        pos = self.mapToScene(event.position().toPoint())
+        if self.page_at(pos) is not None and (word := self.word_at(pos)):
+            self.select(word, word)
+            self.text_selected.emit(self.selection_rect())
+
+    # ---- searching
+
+    def search(self, text):
+        """Highlight every place `text` appears; returns how many."""
+        for item in self.found_marks:
+            self.scene().removeItem(item)
+        self.found, self.found_marks = [], []
+        if not text:
+            return 0
+        color = QColor(self.palette().highlight().color())
+        color.setAlpha(60)
+        for page in range(len(self.pages)):
+            fz = self.fz[page]
+            for hit in fz.search_for(text):
+                box = hit * fz.rotation_matrix
+                rect = self.to_scene(page, QRectF(box.x0, box.y0, box.width, box.height))
+                self.found.append((page, rect))
+                item = self.scene().addRect(rect, Qt.NoPen, color)
+                item.setZValue(1)
+                self.found_marks.append(item)
+        return len(self.found)
+
+    def show_found(self, index):
+        for i, item in enumerate(self.found_marks):
+            color = QColor(self.palette().highlight().color())
+            color.setAlpha(150 if i == index else 60)
+            item.setBrush(color)
+        self.centerOn(self.found[index][1].center())
+
+
+WORD = {".docx", ".docm", ".doc", ".odt", ".rtf"}  # text documents: read as pages, select text and pictures
+
+
+class WordView(QWidget):
+    """A Word or OpenDocument text file as its printed pages (OnlyOffice's PDF): drag to select text,
+    click a picture to copy or save it. No drawing tools: this is for reading and taking things out."""
+
+    def __init__(self, pdf, source):
+        super().__init__()
+        self.path, self.source = Path(pdf), Path(source)
+        self.doc = QPdfDocument(self)
+        self.doc.load(str(pdf))
+        self.fz = pymupdf.open(pdf)
+        self.reader = PageReader(self.doc, self.fz)
+        self.card = Card(self.reader)
+        self.card_layout = QVBoxLayout(self.card)
+        self.card_layout.setContentsMargins(10, 10, 10, 8)
+        self.reader.text_selected.connect(self.offer_copy)
+        self.reader.picture_clicked.connect(self.offer_picture)
+        self.search = SearchBar(self.reader, self)
+        self.search.changed.connect(self.find)
+        self.search.step.connect(self.step_match)
+        self.match = -1
+
+        self.page_label = QLabel()
+        self.page_label.setEnabled(False)  # dimmed: information, not a control
+        self.status = QLabel(textFormat=Qt.RichText)
+        self.status.linkActivated.connect(show_in_folder)
+        self.reader.page_changed.connect(
+            lambda page: self.page_label.setText(f"Page {page + 1} of {len(self.reader.pages)}"))
+        bar = toolbar(self.page_label, self.status, (self.search.button(),),
+                      (tool_button("zoom-out", "Zoom out (Ctrl+-)", lambda: self.reader.zoom(1 / 1.25)),
+                       tool_button("zoom-in", "Zoom in (Ctrl++)", lambda: self.reader.zoom(1.25)),
+                       tool_button("zoom-fit-width", "Fit width", self.reader.fit)))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(bar)
+        layout.addWidget(self.reader, 1)
+        QShortcut(QKeySequence.MoveToPreviousPage, self, lambda: self.reader.go_to(self.reader.current_page() - 1))
+        QShortcut(QKeySequence.MoveToNextPage, self, lambda: self.reader.go_to(self.reader.current_page() + 1))
+        QShortcut(QKeySequence.ZoomIn, self, lambda: self.reader.zoom(1.25))
+        QShortcut(QKeySequence.ZoomOut, self, lambda: self.reader.zoom(1 / 1.25))
+        QShortcut(QKeySequence.SelectAll, self, self.select_all)
+
+    def show_card(self, anchor, *widgets):
+        self.card.hide()  # new widgets show along with a hidden card; a visible one would leave them hidden
+        while item := self.card_layout.takeAt(0):
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                while sub := item.layout().takeAt(0):
+                    sub.widget() and sub.widget().deleteLater()
+        for w in widgets:
+            (self.card_layout.addLayout if isinstance(w, QLayout) else self.card_layout.addWidget)(w)
+        self.card.open_at(anchor)
+
+    def buttons(self, *buttons):
+        row = QHBoxLayout()
+        for button in buttons:
+            button.setFocusPolicy(Qt.NoFocus)  # Space and the arrows keep flipping files
+            row.addWidget(button)
+        row.addStretch()
+        row.addWidget(tool_button("window-close", "Close (Esc)", self.close_card))
+        return row
+
+    def offer_copy(self, rect):
+        copy = QPushButton(QIcon.fromTheme("edit-copy"), "Copy")
+        copy.setToolTip("Copy the selected text (Ctrl+C)")
+        copy.clicked.connect(lambda: (self.copy_text(), copy.setText("Copied")))
+        self.show_card(rect, self.buttons(copy))
+
+    def copy_text(self):
+        QApplication.clipboard().setText(self.reader.selection_text())
+
+    def select_all(self):
+        pages = [p for p in range(len(self.reader.pages)) if self.reader.page_data(p)[0]]
+        if pages:
+            self.reader.select((pages[0], 0), (pages[-1], len(self.reader.page_data(pages[-1])[0]) - 1))
+
+    def offer_picture(self, page, n):
+        image = self.reader.picture(page, n)
+        thumb = QLabel()
+        thumb.setPixmap(QPixmap.fromImage(image).scaled(220, 160, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        size = QLabel(f"{image.width()} × {image.height()} px")
+        size.setEnabled(False)
+        copy = QPushButton(QIcon.fromTheme("edit-copy"), "Copy")
+        copy.clicked.connect(lambda: (QApplication.clipboard().setImage(image), copy.setText("Copied")))
+        save = QPushButton(QIcon.fromTheme("document-save"), "Save")
+        save.setToolTip("Save as PNG next to the document")
+        save.clicked.connect(lambda: self.save_picture(image, page, n))
+        self.show_card(QRectF(self.reader.click, QSizeF(1, 1)), thumb, size, self.buttons(copy, save))  # at the click
+
+    def save_picture(self, image, page, n):
+        dst = free_path(self.source.parent, f"{self.source.stem} picture {page + 1}-{n + 1}", ".png")
+        if image.save(str(dst)):
+            self.status.setText(f'Saved <a href="{escape(str(dst))}">{escape(dst.name)}</a>')
+        else:
+            self.status.setText("Couldn't write the PNG")
+        self.close_card()
+
+    def close_card(self):
+        self.card.hide()
+
+    def escape(self):
+        """Esc: first closes the card, then drops the selection. False when there was nothing to close."""
+        if self.card.isVisible():
+            self.card.hide()
+        elif self.reader.selection:
+            self.reader.clear_selection()
+        else:
+            return False
+        return True
+
+    def find(self, text):
+        count = self.reader.search(text)
+        self.match = -1
+        self.search.label.setText(f"{count} matches" if text else "")
+        if count:
+            self.step_match(1)
+
+    def step_match(self, delta):
+        if self.reader.found:
+            self.match = (self.match + delta) % len(self.reader.found)
+            self.reader.show_found(self.match)
+            self.search.label.setText(f"{self.match + 1} of {len(self.reader.found)}")
 
 
 class PdfEditor(QWidget):
@@ -4613,6 +4956,8 @@ class Peek(QWidget):
                 self.preview.set_editing(False)
         elif isinstance(self.preview, ImagePane) and self.preview.subject_button.isChecked():
             self.preview.leave_subject()
+        elif isinstance(self.preview, WordView) and self.preview.escape():
+            pass
         elif isinstance(self.preview, ImagePane) and self.preview.popup.isVisible():
             self.preview.popup.hide()
             self.preview.paint_boxes()
@@ -4708,7 +5053,13 @@ class Peek(QWidget):
         if out.suffix == ".png":  # Krita's full-size export
             self.set_preview(ImagePane(decode_image(out), self.files[self.index]))
         else:
-            self.set_preview(ModelView(out) if out.suffix == ".glb" else DocView(out, self.files[self.index]))
+            source = self.files[self.index]
+            if out.suffix == ".glb":
+                self.set_preview(ModelView(out))
+            elif source.suffix.lower() in WORD and pymupdf:
+                self.set_preview(WordView(out, source))
+            else:
+                self.set_preview(DocView(out, source))
 
     def set_preview(self, new):
         # Keep keyboard focus on the window, or a text/PDF view would eat the arrow keys.
@@ -4802,6 +5153,8 @@ class Peek(QWidget):
         self.close()
 
     def selected_text(self):
+        if isinstance(self.preview, WordView) and self.preview.reader.selection:
+            return self.preview.reader.selection_text()
         for w in [*self.preview.findChildren(QPlainTextEdit), *self.preview.findChildren(QTextEdit)]:
             if w.isVisible() and w.textCursor().hasSelection():
                 return w.textCursor().selectedText().replace("\u2029", "\n")  # Qt marks line breaks with U+2029
