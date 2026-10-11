@@ -52,11 +52,22 @@ from PySide6.QtWidgets import (QLayout, QGraphicsBlurEffect, QGraphicsOpacityEff
                                QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 # Optional libraries: each feature falls back to a simpler preview without its library
-try:
-    import openpyxl
-    from openpyxl.utils import get_column_letter
-except ImportError:
-    openpyxl = None
+
+
+def lazy_import(name):
+    """The module if it is installed, else None. It loads on first use: pymupdf alone costs ~120 MB of RAM,
+    which a peek that only shows photos never needs."""
+    spec = importlib.util.find_spec(name)
+    if spec is None:
+        return None
+    spec.loader = importlib.util.LazyLoader(spec.loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+openpyxl = lazy_import("openpyxl")
 try:
     from pygments import highlight
     from pygments.formatters import HtmlFormatter
@@ -69,10 +80,7 @@ try:
     from PIL import ExifTags, Image
 except ImportError:
     Image = None
-try:
-    import pymupdf
-except ImportError:
-    pymupdf = None
+pymupdf = lazy_import("pymupdf")
 
 # GStreamer plays short sounds fine; Qt's default FFmpeg backend freezes on them (Qt 6.12)
 if (Path(QLibraryInfo.path(QLibraryInfo.PluginsPath)) / "multimedia/libgstreamermediaplugin.so").exists():
@@ -471,6 +479,29 @@ def clip_preview(path):
     db.deserialize(data[chunk + 16:chunk + 16 + size])
     row = db.execute("SELECT ImageData FROM CanvasPreview LIMIT 1").fetchone()
     return QImage.fromData(row[0]) if row else None
+
+
+def embedded_png(path, last=False):
+    """The PNG preview that Revit (.rvt) and Affinity (.af) files carry inside: the first one in the file,
+    or the `last` one. Revit's is 128 px; Affinity's 512 px. The documents themselves are closed formats."""
+    with open(path, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
+        signature = b"\x89PNG\r\n\x1a\n"
+        start = data.rfind(signature) if last else data.find(signature)
+        end = data.find(b"IEND", start)
+        if start < 0 or end < 0:
+            return None
+        # ponytail: Revit splits streams into sectors; a split preview fails to decode and peek shows the icon
+        return QImage.fromData(data[start:end + 8])
+
+
+def slides_thumbnail(path):
+    """The first slide as the file saved it (OpenDocument: Thumbnails/thumbnail.png, Office: docProps/thumbnail.jpeg),
+    shown while OnlyOffice renders the real slides."""
+    with zipfile.ZipFile(path) as z:
+        for name in ("Thumbnails/thumbnail.png", "docProps/thumbnail.jpeg"):
+            if name in z.namelist():
+                return QImage.fromData(z.read(name))
+    return None
 
 
 def office_text(path):
@@ -3542,7 +3573,7 @@ class SheetView(QWidget):
     def build_table(self, ws_formulas, ws):
         rows, cols = min(ws.max_row, MAX_ROWS), min(ws.max_column, MAX_COLS)
         table = QTableWidget(rows, cols)
-        table.setHorizontalHeaderLabels([get_column_letter(c) for c in range(1, cols + 1)])
+        table.setHorizontalHeaderLabels([openpyxl.utils.get_column_letter(c) for c in range(1, cols + 1)])
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setShowGrid(True)  # always: seeing the cells is the point of this view
         table.hidden_rows, table.hidden_cols = [], []  # what the file hides, for the "Show hidden" toggle
@@ -3606,7 +3637,7 @@ class SheetView(QWidget):
                 table.setColumnHidden(c, not on)
 
     def inspect(self, table, row, col):
-        self.ref.setText(f"{get_column_letter(col + 1)}{row + 1}")
+        self.ref.setText(f"{openpyxl.utils.get_column_letter(col + 1)}{row + 1}")
         item = table.item(row, col)
         raw = item.data(Qt.UserRole) if item else None
         self.formula.setText("" if raw is None else str(raw))
@@ -4457,9 +4488,15 @@ def session(path, keep=True):
 
 def free_ai_memory():
     """Unload the AI models and hand freed memory back to the system: peek stays running hidden."""
+    _sessions.clear()
+    trim_memory()
+
+
+def trim_memory():
+    """Hand freed memory back to the system. glibc keeps freed blocks for reuse otherwise, so a peek that
+    showed a video and a big photo would keep their size forever."""
     import ctypes
     import gc
-    _sessions.clear()
     gc.collect()
     try:
         ctypes.CDLL("libc.so.6").malloc_trim(0)  # glibc keeps freed big blocks for itself otherwise
@@ -5092,7 +5129,7 @@ def move_to_trash(path):
 
 # ---------------------------------------------------------------- choosing a preview
 
-def preview_widget(path, mime, player, image=None, on_open=None):
+def preview_widget(path, mime, player, image=None, on_open=None, video=None):
     name = mime.name()
     suffix = Path(path).suffix.lower()
     if Path(path).is_dir():
@@ -5102,11 +5139,13 @@ def preview_widget(path, mime, player, image=None, on_open=None):
         player.play()
         if name.startswith("audio/"):
             return MediaPane(AudioView(player, mime, path), player)
-        video = QVideoWidget()
+        video = video or QVideoWidget()
         player.setVideoOutput(video)
         # Space closes the window like Sushi, so pausing goes on a click
         video.mousePressEvent = lambda e: player.pause() if player.isPlaying() else player.play()
-        return MediaPane(video, player)
+        pane = MediaPane(video, player)
+        video.show()  # a widget taken out of an old preview stays hidden until shown again
+        return pane
     if name == "application/pdf":
         return DocView(path)
     if suffix in SHEETS and openpyxl:
@@ -5152,7 +5191,9 @@ def preview_widget(path, mime, player, image=None, on_open=None):
     return ImagePane(thumb) if thumb else icon_label(mime)
 
 
-EXTRACTORS = {".blend": blend_thumbnail, ".clip": clip_preview, ".kra": krita_preview, ".krz": krita_preview}
+EXTRACTORS = {".blend": blend_thumbnail, ".clip": clip_preview, ".kra": krita_preview, ".krz": krita_preview,
+              ".rvt": embedded_png, ".af": lambda path: embedded_png(path, last=True),
+              ".odp": slides_thumbnail, ".pptx": slides_thumbnail}
 
 
 # ---------------------------------------------------------------- the window
@@ -5163,7 +5204,9 @@ class Peek(QWidget):
         self.preview = QWidget()
         self.files, self.index = [], 0
         self.preloaded = {}  # path -> Future[QImage] for the neighbours of the shown file
+        self.trimmer = QTimer(self, singleShot=True, interval=1000, timeout=trim_memory)
         self.player = QMediaPlayer(self)
+        self.video = QVideoWidget()  # one for every video: Qt leaks ~1 MB per QVideoWidget it deletes
         self.player.setAudioOutput(QAudioOutput(self.player))
         # Without GStreamer, Qt 6.12's FFmpeg backend freezes when a very short file reaches its end.
         # Looping never reaches the end; pausing when the position jumps back plays it once.
@@ -5382,7 +5425,7 @@ class Peek(QWidget):
         self.player.setVideoOutput(None)  # detach before the old video widget is deleted
         future = self.preloaded.get(path)
         image = future.result() if future and future.done() and not future.exception() else None
-        self.set_preview(preview_widget(str(path), mime, self.player, image, self.open))
+        self.set_preview(preview_widget(str(path), mime, self.player, image, self.open, self.video))
 
         size = QLocale().formattedDataSize(path.stat().st_size) if path.is_file() else ""
         self.details = f"<b>{escape(path.name)}</b><br>{mime.comment()}  {size}  ·  {self.index + 1}/{len(self.files)}"
@@ -5465,7 +5508,10 @@ class Peek(QWidget):
         if isinstance(new, DocView):
             new.editing_changed.connect(self.update_shortcuts)
         self.layout_.replaceWidget(self.preview, new)
+        if not new.isAncestorOf(self.video):
+            self.video.setParent(None)  # keep it alive when the old preview goes
         self.preview.deleteLater()
+        self.trimmer.start()  # waits for a pause, so flipping through files stays quick
         self.preview = new
         self.panel_tray.raise_()  # the new preview was stacked on top of it
         self.place_arrows()

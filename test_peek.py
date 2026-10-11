@@ -741,6 +741,21 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
 else:
     print("skipped subject picking: onnxruntime or the SAM model is missing")
 
+# Revit and Affinity files show the PNG preview they carry; presentations show their saved first slide
+sample = QImage(40, 30, QImage.Format_RGB32)
+sample.fill(QColor("orange"))
+png = QBuffer()
+png.open(QBuffer.WriteOnly)
+sample.save(png, "PNG")
+(d / "house.rvt").write_bytes(b"\xd0\xcf\x11\xe0" + b"\0" * 500 + bytes(png.data()) + b"\0" * 300)
+(d / "art.af").write_bytes(b"\0\xffKA" + bytes(png.data()).replace(b"IEND", b"IENX") + b"layers" + bytes(png.data()))
+for name in ("house.rvt", "art.af"):
+    shown = peek.embedded_png(d / name, last=name.endswith(".af"))
+    assert shown.size() == sample.size() and shown.pixelColor(0, 0) == sample.pixelColor(0, 0), name
+with zipfile.ZipFile(d / "thumb.odp", "w") as z:
+    z.writestr("Thumbnails/thumbnail.png", bytes(png.data()))
+assert peek.slides_thumbnail(d / "thumb.odp").size() == sample.size()
+
 # Presentations: ↑ / ↓ move between slides; a Morph slide glides its same-named objects
 P = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' \
     'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' \
