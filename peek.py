@@ -3015,11 +3015,10 @@ def file_details(path, mime=None):
         owner = f"{pwd.getpwuid(st.st_uid).pw_name} : {grp.getgrgid(st.st_gid).gr_name}"
     except KeyError:
         owner = f"{st.st_uid} : {st.st_gid}"
-    general = [("Type", f"{mime.comment()} ({mime.name()})"),
-               ("Folder", str(path.parent)),
+    general = [("Folder", str(path.parent)),  # the type is in the panel's header
                ("Modified", when(st.st_mtime))]
     if path.is_file():
-        general.insert(1, ("Size", f"{QLocale().formattedDataSize(st.st_size)} ({QLocale().toString(st.st_size)} bytes)"))
+        general.insert(0, ("Size", f"{QLocale().formattedDataSize(st.st_size)} ({QLocale().toString(st.st_size)} bytes)"))
     if birth := getattr(st, "st_birthtime", None):
         general.append(("Created", when(birth)))
     general += [("Opened", when(st.st_atime)), ("Owner", owner), ("Permissions", stat.filemode(st.st_mode))]

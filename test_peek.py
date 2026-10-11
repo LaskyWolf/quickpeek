@@ -292,6 +292,7 @@ assert {e for e, _ in peek.convert_targets(d / "doc.pdf")} >= {".pdf", ".png", "
 assert peek.convert_targets(d / "sub") == []
 details = dict(peek.file_details(d / "notes.txt"))
 assert dict(details["Text"])["Line endings"] == "Linux (LF)", details
+assert "Type" not in dict(details["General"]), "the type is shown in the panel header, not repeated"
 for f in (out, d / "img10 (2).jpg", pdf):
     f.unlink()
 
