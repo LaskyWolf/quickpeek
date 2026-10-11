@@ -211,14 +211,16 @@ QTest.keyClick(w, Qt.Key_1)
 assert pane.view.transform().m11() == 1.0 and pane.zoom_label.text() == "100%"
 QTest.keyClick(w, Qt.Key_Plus)
 assert pane.view.transform().m11() == 1.25
-QTest.keyClick(w, Qt.Key_I)  # Details side panel, read in the background
-assert w.side.isVisible() and w.side.currentWidget() is w.details_panel
-assert wait(lambda: "400 × 300" in w.details_panel.text.text()), w.details_panel.text.text()
-assert "Permissions" in w.details_panel.text.text()
-QTest.keyClick(w, Qt.Key_C)  # Convert tab lists image formats
-assert w.side.currentWidget() is w.convert and "JPG" in [b.text() for b in w.convert.findChildren(peek.QPushButton)]
-QTest.keyClick(w, Qt.Key_C)
-assert not w.side.isVisible()
+QTest.keyClick(w, Qt.Key_I)  # side panel: details read in the background, then the tools
+assert w.panel.isVisible() and w.panel_button.isChecked()
+assert wait(lambda: "400 × 300" in w.panel.details.text()), w.panel.details.text()
+assert "Permissions" in w.panel.details.text()
+assert "JPG" in [b.text() for b in w.panel.findChildren(peek.QPushButton)]
+tray = w.panel_tray.geometry()
+assert tray.right() <= w.width() and tray.top() < 30, tray  # floats in the top right corner
+assert not w.panel.thumb.geometry().translated(w.panel.mapTo(w, w.panel.rect().topLeft())).intersects(tray)
+QTest.keyClick(w, Qt.Key_C)  # C closes it too
+assert not w.panel.isVisible() and not w.panel_button.isChecked()
 QTest.keyClick(w, Qt.Key_Right)  # preloaded neighbour
 assert w.windowTitle() == "img10.png" and isinstance(w.preview, peek.ImagePane)
 
@@ -431,7 +433,7 @@ def right_click(widget):
 
 
 right_click(w.preview.view.viewport())
-for label in ("Open", "Show in Folder", "Copy", "Copy Path", "Rename…", "Move to Trash", "Details", "Tools", "Close"):
+for label in ("Open", "Show in Folder", "Copy", "Copy Path", "Rename…", "Move to Trash", "Details and Tools", "Close"):
     assert label in shown, (label, shown)
 QTest.keyClick(w, Qt.Key_C, Qt.ControlModifier)
 clip = QApplication.clipboard().mimeData()
@@ -459,12 +461,12 @@ w = peek.Peek(t / "pic.png")
 w.show()
 QTest.qWaitForWindowActive(w)
 QTest.keyClick(w, Qt.Key_C)
-assert "pic.png" in w.convert.name.text()
+assert "pic.png" in w.panel.name.text()
 for fmt in ("JPG", "BMP"):
-    next(b for b in w.convert.findChildren(peek.QPushButton) if b.text().startswith(fmt)).click()
-    assert wait(lambda: f"pic.{fmt.lower()}</a>" in "".join(l.text() for l in w.convert.findChildren(QLabel)), 10000)
+    next(b for b in w.panel.findChildren(peek.QPushButton) if b.text().startswith(fmt)).click()
+    assert wait(lambda: f"pic.{fmt.lower()}</a>" in "".join(l.text() for l in w.panel.findChildren(QLabel)), 10000)
 QTest.qWait(50)  # the replaced result is deleted on the next event-loop turn
-links = [l.text() for l in w.convert.findChildren(QLabel) if "✓" in l.text() and l.isVisible()]
+links = [l.text() for l in w.panel.findChildren(QLabel) if "✓" in l.text() and l.isVisible()]
 assert len(links) == 1 and "pic.bmp" in links[0], links
 w.close()
 

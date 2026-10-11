@@ -684,6 +684,9 @@ class Tray(QWidget):
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7)
 
 
+PANEL_BUTTON_ROOM = 44  # width kept free at the top right for the Details and Tools button
+
+
 def toolbar(first, *items):
     """`first` takes the free space on the left; each tuple after it becomes a Tray."""
     row = QHBoxLayout()
@@ -691,6 +694,7 @@ def toolbar(first, *items):
     row.addWidget(first, 1)
     for item in items:
         row.addWidget(Tray(*item) if isinstance(item, tuple) else item)
+    row.addSpacing(PANEL_BUTTON_ROOM)  # the window's panel button floats over this corner
     return row
 
 
@@ -3634,33 +3638,10 @@ def text_to_document(path, ext):
 
 # ---------------------------------------------------------------- side panel
 
-class DetailsPanel(QWidget):
-    """Everything peek knows about the file, read on a worker thread."""
-
-    def __init__(self):
-        super().__init__()
-        self.path = None
-        self.text = QLabel(textFormat=Qt.RichText, alignment=Qt.AlignTop, wordWrap=True, openExternalLinks=True,
-                           textInteractionFlags=Qt.TextBrowserInteraction)
-        self.text.setContentsMargins(10, 4, 10, 10)
-        scroll = QScrollArea(widgetResizable=True, frameShape=QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # long values wrap instead
-        scroll.setWidget(self.text)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(scroll, 1)
-
-    def show_file(self, path):
-        self.path = path
-        self.text.setText("<p style='opacity:.6'>Reading…</p>")
-        mime = QMimeDatabase().mimeTypeForFile(str(path))
-        in_background(lambda: file_details(path, mime), self,
-                      lambda sections: path == self.path and self.text.setText(details_html(sections)))
-
-
-class ConvertPanel(QWidget):
-    """The Tools panel: the file being worked on, one button per action, and the latest result.
-    Results land next to the original; nothing is overwritten."""
+class SidePanel(QWidget):
+    """The side panel: the file's name and type, everything peek knows about it (read on a worker thread),
+    then its tools: one button per action and the latest result. Results land next to the original;
+    nothing is overwritten."""
     open_file = Signal(object)
 
     def __init__(self):
@@ -3673,6 +3654,10 @@ class ConvertPanel(QWidget):
         header.setSpacing(10)
         header.addWidget(self.thumb)
         header.addWidget(self.name, 1)
+        self.details = QLabel(textFormat=Qt.RichText, alignment=Qt.AlignTop, wordWrap=True,
+                              openExternalLinks=True, textInteractionFlags=Qt.TextBrowserInteraction)
+        tools = QLabel("<b>Tools</b>", textFormat=Qt.RichText)
+        tools.setContentsMargins(0, 10, 0, 0)
         self.buttons = QVBoxLayout()
         self.buttons.setSpacing(4)
         self.result = QHBoxLayout()  # the latest job: progress, then a link to what it made
@@ -3684,11 +3669,14 @@ class ConvertPanel(QWidget):
         column.setContentsMargins(10, 8, 10, 10)
         column.setSpacing(8)
         column.addLayout(header)
+        column.addWidget(self.details)
+        column.addWidget(tools)
         column.addLayout(self.result)
         column.addLayout(self.buttons)
         column.addWidget(note)
         column.addStretch()
         scroll = QScrollArea(widgetResizable=True, frameShape=QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # long values wrap instead
         scroll.setWidget(inner)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -3709,6 +3697,9 @@ class ConvertPanel(QWidget):
         else:
             self.thumb.setPixmap(QIcon.fromTheme(mime.iconName(), QIcon.fromTheme("unknown")).pixmap(48))
         self.name.setText(f"<b>{escape(Path(path).name)}</b><br><small>{escape(mime.comment())}</small>")
+        self.details.setText("<p style='opacity:.6'>Reading…</p>")
+        in_background(lambda: file_details(path, mime), self,
+                      lambda sections: path == self.path and self.details.setText(details_html(sections)))
         while item := self.buttons.takeAt(0):
             item.widget().deleteLater()
         targets = convert_targets(path)
@@ -3897,34 +3888,28 @@ class Peek(QWidget):
         self.info = QLabel(textFormat=Qt.RichText)
         open_btn = QPushButton(QIcon.fromTheme("document-open"), "Open")
         open_btn.clicked.connect(self.open_external)
-        self.details_panel = DetailsPanel()
-        self.convert = ConvertPanel()
-        self.convert.open_file.connect(self.open)
-        self.side = QStackedWidget()
-        self.side.addWidget(self.details_panel)
-        self.side.addWidget(self.convert)
+        self.panel = SidePanel()
+        self.panel.open_file.connect(self.open)
         line = QFrame(frameShape=QFrame.VLine, frameShadow=QFrame.Plain)
         line.setEnabled(False)  # the theme's faint line color
         self.side_box = QWidget()  # the panel plus the thin line separating it from the preview
         side_layout = QHBoxLayout(self.side_box)
         side_layout.setContentsMargins(6, 0, 0, 0)
+        self.panel_top = side_layout  # its top margin keeps the panel under the floating button: resizeEvent
         side_layout.addWidget(line)
-        side_layout.addWidget(self.side, 1)
+        side_layout.addWidget(self.panel, 1)
         self.side_box.setFixedWidth(330)
         self.side_box.hide()
-        self.side_buttons = {}
-        for tab, (icon, text, key) in enumerate((("documentinfo", "Details", "I"),
-                                                  ("tools", "Tools", "C"))):
-            button = tool_button(icon, f"{text} ({key})", lambda _=False, t=tab: self.toggle_side(t),
-                                 text=text, checkable=True)
-            button.toggled.disconnect()  # toggle_side decides the checked state of both buttons
-            button.clicked.connect(lambda _=False, t=tab: self.toggle_side(t))
-            self.side_buttons[tab] = button
+        self.panel_button = tool_button("sidebar-expand-right", "Details and tools (I)", self.toggle_side,
+                                        checkable=True)
+        self.panel_button.toggled.disconnect()  # toggle_side decides the checked state
+        self.panel_button.clicked.connect(self.toggle_side)
+        self.panel_tray = Tray(self.panel_button)
+        self.panel_tray.setParent(self)  # floats in the top right corner: see resizeEvent
         bar = QHBoxLayout()
         bar.setSpacing(8)
         bar.addWidget(self.drag_icon)
         bar.addWidget(self.info, 1)
-        bar.addWidget(Tray(*self.side_buttons.values()))
         bar.addWidget(open_btn)
         body = QHBoxLayout()
         body.addWidget(self.preview, 1)
@@ -3932,7 +3917,7 @@ class Peek(QWidget):
         self.layout_ = QVBoxLayout(self)
         self.layout_.addLayout(body, 1)
         self.layout_.addLayout(bar)
-        for w in [self.side, *self.side.findChildren(QWidget), *self.side_buttons.values(), open_btn]:
+        for w in [self.panel, *self.panel.findChildren(QWidget), self.panel_button, open_btn]:
             w.setFocusPolicy(Qt.NoFocus)  # clicking them must not steal Space and the arrow keys
 
         # Switched off while flying or typing in a search field
@@ -3940,8 +3925,8 @@ class Peek(QWidget):
         self.shortcuts.append(QShortcut("Return", self, self.open_external))
         self.shortcuts += [QShortcut(key, self, lambda: self.step(-1)) for key in ("Left", "Up")]
         self.shortcuts += [QShortcut(key, self, lambda: self.step(1)) for key in ("Right", "Down")]
-        self.shortcuts += [QShortcut("I", self, lambda: self.toggle_side(0)),
-                           QShortcut("C", self, lambda: self.toggle_side(1)),
+        self.shortcuts += [QShortcut("I", self, self.toggle_side),
+                           QShortcut("C", self, self.toggle_side),
                            QShortcut(QKeySequence.Copy, self, self.copy_file),
                            QShortcut("Ctrl+Shift+C", self, self.copy_path),
                            QShortcut("F2", self, self.rename),
@@ -3960,29 +3945,32 @@ class Peek(QWidget):
             self.resize(int(screen.width() * 0.6), int(screen.height() * 0.7))
         self.open(path)
 
-    def toggle_side(self, tab):
-        """Open the side panel on `tab`; the same button again closes it."""
-        if self.side_open() and self.side.currentIndex() == tab:
-            self.side_box.hide()
-        else:
-            self.side.setCurrentIndex(tab)
-            self.side_box.show()
+    def toggle_side(self):
+        self.side_box.setVisible(not self.side_open())
         self.refresh_side()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        margins = self.layout_.contentsMargins()
+        self.panel_tray.adjustSize()
+        self.panel_tray.move(self.width() - margins.right() - self.panel_tray.width(), margins.top())
+        self.panel_tray.raise_()
+        self.panel_top.setContentsMargins(6, self.panel_tray.height() + 6, 0, 0)
 
     def side_open(self):
         return not self.side_box.isHidden()  # isVisible() would say False while the window is hidden
 
     def refresh_side(self, *_):
         """Fill only the visible panel page: browsing with the panel closed costs nothing."""
-        for tab, button in self.side_buttons.items():
-            button.setChecked(self.side_open() and self.side.currentIndex() == tab)
+        self.panel_button.setChecked(self.side_open())
+        self.panel_button.setIcon(QIcon.fromTheme("sidebar-collapse-right" if self.side_open()
+                                                  else "sidebar-expand-right"))
         if not self.side_open() or not self.files:
             return
-        page = self.side.currentWidget()
         path = self.files[self.index]
-        if page.path != path:
-            page.show_file(path)
-            for w in page.findChildren(QWidget):
+        if self.panel.path != path:
+            self.panel.show_file(path)
+            for w in self.panel.findChildren(QWidget):
                 w.setFocusPolicy(Qt.NoFocus)
 
     def open(self, path):
@@ -4148,6 +4136,7 @@ class Peek(QWidget):
         self.layout_.replaceWidget(self.preview, new)
         self.preview.deleteLater()
         self.preview = new
+        self.panel_tray.raise_()  # the new preview was stacked on top of it
         self.setFocus()
         self.update_shortcuts()
 
@@ -4158,7 +4147,7 @@ class Peek(QWidget):
     def eventFilter(self, obj, event):
         """Right-click anywhere in the preview: the file menu. Text views keep their Copy / Select All on top."""
         if (event.type() != QEvent.ContextMenu or not isinstance(obj, QWidget) or obj.window() is not self
-                or isinstance(obj, QLineEdit) or self.side.isAncestorOf(obj)
+                or isinstance(obj, QLineEdit) or self.panel.isAncestorOf(obj)
                 or isinstance(self.preview, ModelView) and self.preview.flying):
             return False
         text = next((w for w in (obj, obj.parent()) if isinstance(w, (QPlainTextEdit, QTextEdit))), None)
@@ -4200,12 +4189,9 @@ class Peek(QWidget):
             add("viewimage", "Set as Wallpaper",
                 lambda: QProcess.startDetached("plasma-apply-wallpaperimage", [str(path)]))
         menu.addSeparator()
-        for tab, button in self.side_buttons.items():
-            action = add(button.icon().name() or "", button.text(), lambda _=False, t=tab: self.toggle_side(t),
-                         "IC"[tab])
-            action.setIcon(button.icon())
-            action.setCheckable(True)
-            action.setChecked(self.side_open() and self.side.currentIndex() == tab)
+        panel = add("sidebar-expand-right", "Details and Tools", self.toggle_side, "I")
+        panel.setCheckable(True)
+        panel.setChecked(self.side_open())
         full = add("view-fullscreen", "Full Screen", lambda: self.showNormal() if self.isFullScreen()
                    else self.showFullScreen(), "F11")
         full.setCheckable(True)
