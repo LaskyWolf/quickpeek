@@ -1,6 +1,6 @@
 # Personal package for KDEQuickPeek. Build and install from this folder: makepkg -si
 pkgname=quickpeek
-pkgver=r31.e5a6b44
+pkgver=r33.9e6adca
 pkgrel=1
 pkgdesc="KDEQuickPeek: quick file previewer for KDE Plasma (Space to preview)"
 arch=(any)
