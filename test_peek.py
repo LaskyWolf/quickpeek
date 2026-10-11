@@ -515,6 +515,9 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
     assert cut.pixelColor(5, 5).alpha() < 30 and cut.pixelColor(200, 200).alpha() > 240  # corner clear, middle kept
     pane.picked(QPointF(925, 375), Qt.ShiftModifier)
     assert wait(lambda: pane.cutout().width() > 800, 10000), pane.cutout().size()
+    assert pane.transition is not None, "the added part spreads in from the click"
+    assert wait(lambda: pane.transition is None, 3000)
+    assert all(item.parentItem() is None and item.scene() for item in pane.layers)
     pane.picked(QPointF(925, 375), Qt.ControlModifier)
     assert wait(lambda: pane.cutout().width() < 420, 10000), pane.cutout().size()
     mask = pane.mask

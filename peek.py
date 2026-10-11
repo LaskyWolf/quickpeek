@@ -1014,6 +1014,7 @@ class ImagePane(QWidget):
         self.layers = []  # dimming, glow and outline over the picture
         self.pending = []  # clicks waiting for the picture to be read, or for the previous click
         self.history = []  # earlier `parts`, for Ctrl+Z
+        self.transition = None  # (animation, finish) while an add/remove/fade animation runs
         self.busy = False
         self.progress = Progress()
         self.ticker = QTimer(self, interval=250)
@@ -1215,7 +1216,7 @@ class ImagePane(QWidget):
                         parts[i] = part
                 parts = [part for part in parts if (part["logits"] > 0).any()]
             if not parts:
-                return parts, None, None, None, mode
+                return parts, None, None, None, mode, (x, y)
             logits = merge_parts(parts)
             height, width = logits.shape
             seeds = [pt for part in parts for pt, label in zip(part["points"], part["labels"]) if label == 1]
@@ -1224,7 +1225,7 @@ class ImagePane(QWidget):
             mask = feather(inside, max(1, round(max(width, height) / 1200)))
             if segmenter.edges is not None:
                 mask = sharpen(inside, mask, segmenter.edges, reach, bias)
-            return parts, logits, mask, subject_layers(mask), mode
+            return parts, logits, mask, subject_layers(mask), mode, (x, y)
 
         in_background(lambda: run_catching(work), self, self.show_subject, pool=_convert_pool)
 
@@ -1233,48 +1234,113 @@ class ImagePane(QWidget):
         if isinstance(result, Exception):
             self.subject_status.setText(f"Subject picking failed: {str(result)[:100]}")
         elif self.subject_button.isChecked():
-            parts, logits, mask, layers, mode = result
+            parts, logits, mask, layers, mode, (x, y) = result
             if mode in ("new", "add", "remove"):
                 self.history = (self.history + [self.parts])[-30:]  # Ctrl+Z goes back here
             if mask is None or mask.max() < 0.5:
                 self.clear_subject()
             else:
                 self.parts, self.logits, self.mask = parts, logits, mask
-                self.draw_subject(*layers, lift=mode == "new")
+                self.draw_subject(*layers, mode, QPointF(x, y))
         self.next_pick()
 
-    def draw_subject(self, dim, edge, lift):
-        """Dim everything else and outline the subject with a glow. A new pick 'lifts': the dimming fades in
-        while the glow tightens around the subject."""
+    def draw_subject(self, dim, edge, mode, point):
+        """Dim everything else and outline the subject with a glow.
+        A new pick 'lifts': the dimming fades in while the glow tightens around the subject.
+        Shift/Ctrl+click: the change spreads out from the click, so only what changed moves.
+        Slider and Ctrl+Z: the old look fades into the new one."""
         scene = self.view.scene()
-        for item in self.layers:
-            scene.removeItem(item)
-        shade = scene.addPixmap(QPixmap.fromImage(dim))
-        glow = scene.addPixmap(QPixmap.fromImage(edge))
+        self.end_transition()
+        old = self.layers
+        shade = QGraphicsPixmapItem(QPixmap.fromImage(dim))
+        glow = QGraphicsPixmapItem(QPixmap.fromImage(edge))
         blur = QGraphicsBlurEffect(blurRadius=12)
         glow.setGraphicsEffect(blur)
-        line = scene.addPixmap(QPixmap.fromImage(edge))
-        for z, item in enumerate((shade, glow, line), 1):
+        line = QGraphicsPixmapItem(QPixmap.fromImage(edge))
+        line.setOpacity(0.85)
+        new = [shade, glow, line]
+        for z, item in enumerate(new, 1):
             item.setZValue(z)
             item.setTransformationMode(Qt.SmoothTransformation)
-        self.layers = [shade, glow, line]
+            scene.addItem(item)
+        self.layers = new
         self.subject_tray.show()
         self.copy_tray.show()
         self.subject_status.setText(self.HINT)
-        animation = QVariantAnimation(self, startValue=0.0, endValue=1.0, duration=650 if lift else 300,
-                                      easingCurve=QEasingCurve.OutCubic)
 
-        def step(t):
-            if lift:
+        if mode == "new" or not old:
+            for item in old:
+                scene.removeItem(item)
+
+            def step(t):
                 shade.setOpacity(t)
-            glow.setOpacity(t)
-            line.setOpacity(0.85 * t)
-            blur.setBlurRadius(12 + 36 * (1 - t))
+                glow.setOpacity(t)
+                line.setOpacity(0.85 * t)
+                blur.setBlurRadius(12 + 36 * (1 - t))
+            finish, duration = None, 650
+        elif mode in ("add", "remove"):
+            # Two clipping shapes: the new layers show inside a circle growing from the click, the old ones
+            # everywhere else. Each spot shows exactly one of them, so nothing is dimmed twice.
+            inside, outside = QGraphicsPathItem(), QGraphicsPathItem()
+            for clip, items in ((inside, new), (outside, old)):
+                clip.setPen(Qt.NoPen)
+                clip.setFlag(QGraphicsItem.ItemClipsChildrenToShape)
+                scene.addItem(clip)
+                for item in items:
+                    item.setParentItem(clip)
+            area = QRectF(self.image.rect())
+            reach = max(QLineF(point, corner).length() for corner in
+                        (area.topLeft(), area.topRight(), area.bottomLeft(), area.bottomRight()))
+
+            def step(t):
+                circle = QPainterPath()
+                circle.addEllipse(point, t * reach, t * reach)
+                inside.setPath(circle)
+                rest = QPainterPath()  # odd-even fill: the area minus the circle
+                rest.addRect(area.adjusted(-100, -100, 100, 100))
+                rest.addEllipse(point, t * reach, t * reach)
+                outside.setPath(rest)
+
+            def finish():
+                for item in new:
+                    item.setParentItem(None)
+                scene.removeItem(inside)
+                scene.removeItem(outside)  # with the old layers in it
+            duration = 550
+        else:
+            def step(t):
+                for item, opacity in zip(new, (1, 1, 0.85)):
+                    item.setOpacity(opacity * t)
+                for item, opacity in zip(old, (1, 1, 0.85)):
+                    item.setOpacity(opacity * (1 - t))
+
+            def finish():
+                for item in old:
+                    scene.removeItem(item)
+            duration = 220
+        animation = QVariantAnimation(self, startValue=0.0, endValue=1.0, duration=duration,
+                                      easingCurve=QEasingCurve.OutCubic)
         animation.valueChanged.connect(step)
         step(0)
+        if finish:
+            def done():
+                if self.transition and self.transition[0] is animation:
+                    self.transition = None
+                    finish()
+            animation.finished.connect(done)
+            self.transition = (animation, finish)
         animation.start(QAbstractAnimation.DeleteWhenStopped)
 
+    def end_transition(self):
+        """Jump a running add/remove/fade animation to its end, before drawing a newer pick."""
+        if self.transition:
+            animation, finish = self.transition
+            self.transition = None
+            animation.stop()
+            finish()
+
     def clear_subject(self):
+        self.end_transition()
         for item in self.layers:
             self.view.scene().removeItem(item)
         self.layers, self.mask, self.logits, self.parts = [], None, None, []
