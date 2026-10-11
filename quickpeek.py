@@ -29,7 +29,10 @@ import copy
 import types
 import urllib.request
 import zipfile
-from compression import zstd
+try:
+    from compression import zstd  # Python 3.14+; older Pythons skip compressed .blend thumbnails
+except ImportError:
+    zstd = None
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from xml.etree import ElementTree
@@ -40,7 +43,11 @@ from PySide6.QtCore import (QAbstractAnimation, QEasingCurve, QVariantAnimation,
                             QElapsedTimer, QPoint, QPropertyAnimation, QPointF, QProcess, QRect, QRectF, QSettings, QSize, QSizeF, QStandardPaths, QTimer, QUrl, Signal)
 from PySide6.QtGui import (QTextCursor, QColor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QImageReader, QImageWriter, QKeySequence,
                            QMovie, QPageSize, QPainter, QPainterPath, QPalette, QPen, QPdfWriter, QPixmap, QShortcut, QCursor, QFontMetrics, QTextDocument, QTransform, QLinearGradient)
-from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer, QtAudio
+from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer
+try:
+    from PySide6.QtMultimedia import QtAudio
+except ImportError:  # PySide6 before 6.9 (Debian 13) names it QAudio
+    from PySide6.QtMultimedia import QAudio as QtAudio
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtPdf import QPdfDocumentRenderOptions, QPdfDocument, QPdfSearchModel
@@ -471,6 +478,8 @@ def blend_thumbnail(path):
         head = f.read(4)
         f.seek(0)
         if head == b"\x28\xb5\x2f\xfd":  # zstd, Blender 3.0+ "Compress" option
+            if zstd is None:
+                return None
             data = zstd.ZstdDecompressor().decompress(f.read(), max_length=BLEND_HEAD)
         elif head[:2] == b"\x1f\x8b":  # gzip, older Blender
             data = gzip.GzipFile(fileobj=f).read(BLEND_HEAD)
@@ -5233,7 +5242,7 @@ def preview_widget(path, mime, player, image=None, on_open=None, video=None):
         extracted = EXTRACTORS[suffix](path) if suffix in EXTRACTORS else None
         text = office_text(path) if suffix in OFFICE else None
     except (OSError, ValueError, KeyError, struct.error, sqlite3.Error, zipfile.BadZipFile,
-            ElementTree.ParseError, zstd.ZstdError):
+            ElementTree.ParseError, *([zstd.ZstdError] if zstd else [])):
         extracted = text = None  # damaged or unexpected file: fall through to the generic previews
     if extracted and not extracted.isNull():
         return ImagePane(extracted)
