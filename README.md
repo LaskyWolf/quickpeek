@@ -40,3 +40,7 @@ sudo pacman -U quickpeek-*.pkg.tar.zst
 ```bash
 QT_QPA_PLATFORM=offscreen python3 test_quickpeek.py
 ```
+
+## License
+
+GPL-3.0-or-later. See `LICENSE`.

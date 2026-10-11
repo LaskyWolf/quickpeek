@@ -4,8 +4,8 @@ pkgver=r33.9e6adca
 pkgrel=1
 pkgdesc="KDEQuickPeek: quick file previewer for KDE Plasma (Space to preview)"
 arch=(any)
-license=(custom)
-depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d qt6-webengine glib2)
+license=(GPL-3.0-or-later)
+depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d glib2)
 optdepends=(
   'python-pymupdf: PDF editor'
   'python-numpy: subject picking and finding text in images'
@@ -15,6 +15,9 @@ optdepends=(
   'python-openpyxl: spreadsheet preview'
   'python-pygments: code highlighting'
   'ffmpeg: video thumbnails, conversions and audio waveforms'
+  'onlyoffice-bin: Word, Excel, PowerPoint and OpenDocument pages, presentations with Morph (AUR)'
+  'assimp: converting 3D models to other formats'
+  'blender: 3D preview of .blend files'
   'krita: full-size preview of Krita archives (.krz)'
   'poppler: PDF thumbnails'
   'ghostscript: PostScript preview'

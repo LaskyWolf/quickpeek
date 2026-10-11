@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """KDEQuickPeek (command: quickpeek): quick file previewer (GNOME Sushi clone) for KDE. Usage: quickpeek FILE | quickpeek --quit"""
 import configparser
 import datetime

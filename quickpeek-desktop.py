@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Make Space on a selected Plasma desktop icon open `quickpeek`.
 
 Plasma loads a desktop package from ~/.local/share before /usr/share, so this installs a
