@@ -1,4 +1,5 @@
 """Self-check for peek. Run: QT_QPA_PLATFORM=offscreen python3 test_peek.py"""
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -739,6 +740,91 @@ if peek.has_onnx() and all((models / name).exists() for name in peek.SAM2_FILES)
     w.close()
 else:
     print("skipped subject picking: onnxruntime or the SAM model is missing")
+
+# Presentations: ↑ / ↓ move between slides; a Morph slide glides its same-named objects
+P = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' \
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' \
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+
+
+def slide_xml(shapes, morph):
+    body = "".join(f'<p:sp><p:nvSpPr><p:cNvPr id="{i + 2}" name="{name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+                   f'<p:spPr><a:xfrm rot="{rot * 60000}"><a:off x="{x}" y="{y}"/><a:ext cx="{size}" cy="{size}"/>'
+                   f'</a:xfrm></p:spPr></p:sp>' for i, (name, x, y, size, rot) in enumerate(shapes))
+    transition = ('<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">'
+                  '<mc:Choice xmlns:p159="http://schemas.microsoft.com/office/powerpoint/2015/09/main" Requires="p159">'
+                  '<p:transition xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" p14:dur="1500">'
+                  '<p159:morph option="byObject"/></p:transition></mc:Choice></mc:AlternateContent>') if morph else ""
+    return f'<p:sld {P}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/>' \
+           f'</p:nvGrpSpPr><p:grpSpPr/>{body}</p:spTree></p:cSld>{transition}</p:sld>'
+
+
+with zipfile.ZipFile(d / "deck.pptx", "w") as z:
+    z.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+    z.writestr("ppt/presentation.xml", f'<p:presentation {P}><p:sldIdLst><p:sldId id="256" r:id="rId1"/>'
+               '<p:sldId id="257" r:id="rId2"/><p:sldId id="258" r:id="rId3"/></p:sldIdLst>'
+               '<p:sldSz cx="9144000" cy="5143500"/></p:presentation>')
+    z.writestr("ppt/_rels/presentation.xml.rels",
+               '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + "".join(
+                   f'<Relationship Id="rId{i}" Target="slides/slide{i}.xml" Type="http://schemas.openxmlformats.org/'
+                   f'officeDocument/2006/relationships/slide"/>' for i in (1, 2, 3)) + '</Relationships>')
+    z.writestr("ppt/slides/slide1.xml", slide_xml([("Ball", 0, 0, 1000000, 0), ("Gone", 5000000, 0, 500000, 0)], False))
+    z.writestr("ppt/slides/slide2.xml", slide_xml([("Ball", 4000000, 2000000, 2000000, 90)], True))
+    z.writestr("ppt/slides/slide3.xml", slide_xml([], False).replace("<p:sld ", '<p:sld show="0" '))
+slides, size = peek.read_slides(d / "deck.pptx")
+assert size == (9144000, 5143500) and len(slides) == 2, (size, slides)  # the hidden slide is left out
+assert [o[0] for o in slides[0]["objects"]] == ["Ball", "Gone"] and not slides[0]["morph"]
+assert slides[1]["morph"] and slides[1]["duration"] == 1500
+assert slides[1]["objects"][0][1] == (4000000, 2000000, 2000000, 2000000, 90.0)
+pages = peek.morph_deck(d / "deck.pptx", slides, d / "sprites.pptx")
+assert pages == [(0, None, None), (0, 0, "000000"), (0, 0, "FFFFFF"), (0, 1, "000000"), (0, 1, "FFFFFF"),
+                 (1, None, None), (1, 0, "000000"), (1, 0, "FFFFFF")], pages
+with zipfile.ZipFile(d / "sprites.pptx") as z:
+    assert z.read("ppt/presentation.xml").count(b"sldId ") == len(pages)
+    sprite = z.read("ppt/slides/peek3.xml").decode()
+    assert 'name="Gone"' in sprite and 'name="Ball"' not in sprite and 'showMasterSp="0"' in sprite, sprite
+    assert 'name="Ball"' not in z.read("ppt/slides/peek0.xml").decode()  # the background page has no objects
+
+pdf = QPdfWriter(str(d / "deck.pdf"))
+pdf.setPageSize(QPageSize(QPageSize.A4))
+p = QPainter(pdf)
+p.fillRect(QRectF(0, 0, 50, 50), Qt.blue)
+pdf.newPage()
+p.fillRect(QRectF(0, 0, 50, 50), Qt.green)
+p.end()
+w.close()
+w = peek.Peek(d / "deck.pptx")
+w.show()
+QTest.qWaitForWindowActive(w)
+w.set_preview(peek.SlideView(d / "deck.pdf", d / "deck.pptx"))
+view = w.preview
+QTest.qWait(100)
+assert view.label.text() == "Slide 1 of 2"
+QTest.keyClick(w, Qt.Key_Down)
+assert view.index == 1 and w.files[w.index].name == "deck.pptx", "↓ moves a slide, not a file"
+assert "Morph" in view.label.text()
+QTest.keyClick(w, Qt.Key_Down)
+assert view.index == 1  # no slide past the last
+QTest.keyClick(w, Qt.Key_Up)
+assert view.index == 0
+if importlib.util.find_spec("numpy"):
+    on_black, on_white = QImage(4, 1, QImage.Format_RGB32), QImage(4, 1, QImage.Format_RGB32)
+    for x, (black, white) in enumerate([(0x000000, 0xffffff), (0xff0000, 0xff0000), (0x800000, 0xff7f7f), (0, 0)]):
+        on_black.setPixel(x, 0, black)
+        on_white.setPixel(x, 0, white)
+    cut = peek.sprite_image(on_black, on_white)
+    assert [cut.pixelColor(x, 0).alpha() for x in range(3)] == [0, 255, 128], "alpha from black vs white"
+    assert cut.pixelColor(2, 0).red() == 255  # half-covered red stays fully red, just half see-through
+    # Morph plays with the sprite pages; drawing a frame halfway must not fail
+    view.morph_doc = view.doc
+    view.morph_index = {page: 0 for page in pages}
+    view.go(1)
+    assert view.animation.state() == view.animation.State.Running and view.animation.duration() == 1500
+    view.set_frame((0, 1, 0.5))
+    view.canvas.grab()
+    QTest.keyClick(w, Qt.Key_Up)  # going back plays it in reverse
+    assert view.index == 0 and view.animation.state() == view.animation.State.Running
+    assert wait(lambda: view.frame is None, 3000)
 
 # AI image entries appear only when their tools are installed
 codes = [code for code, _ in peek.convert_targets(d / "img2.png")]

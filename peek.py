@@ -11,6 +11,7 @@ import locale
 import mmap
 import os
 import pwd
+import posixpath
 import re
 import shutil
 import sqlite3
@@ -22,6 +23,7 @@ import sys
 import tarfile
 import threading
 import time
+import copy
 import types
 import urllib.request
 import zipfile
@@ -2846,6 +2848,386 @@ class WordView(QWidget):
             self.search.label.setText(f"{self.match + 1} of {len(self.reader.found)}")
 
 
+# ---------------------------------------------------------------- presentations
+
+PML = {"p": "http://schemas.openxmlformats.org/presentationml/2006/main",
+       "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+       "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+       "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
+       "ct": "http://schemas.openxmlformats.org/package/2006/content-types"}
+MORPH_TAG = "{http://schemas.microsoft.com/office/powerpoint/2015/09/main}morph"
+P14_DUR = "{http://schemas.microsoft.com/office/powerpoint/2010/main}dur"
+SHAPES = {"sp", "pic", "grpSp", "graphicFrame", "cxnSp"}  # what a slide's shape tree draws
+
+
+def local(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def zip_xml(z, name):
+    """Parse a part, keeping its namespace prefixes: PowerPoint's mc:Ignorable lists them by name."""
+    text = z.read(name).decode("utf-8")
+    for prefix, uri in re.findall(r'xmlns:(\w+)="([^"]+)"', text):
+        ElementTree.register_namespace(prefix, uri)
+    return ElementTree.fromstring(text)
+
+
+def part_rels(z, part):
+    """{relationship id: (type, target part)} of a part, targets resolved to zip names."""
+    folder, name = part.rsplit("/", 1)
+    rels = f"{folder}/_rels/{name}.rels"
+    if rels not in z.namelist():
+        return {}
+    out = {}
+    for rel in zip_xml(z, rels):
+        target = posixpath.normpath(posixpath.join(folder, rel.get("Target")))
+        out[rel.get("Id")] = (rel.get("Type").rsplit("/", 1)[-1], target)
+    return out
+
+
+def shape_box(shape, inherited):
+    """(x, y, w, h, rotation in degrees) of a shape in EMU, or None. Placeholders without their own
+    position take it from the layout, then the master (`inherited`: [shape trees])."""
+    xfrm = next((x for x in (shape.find("p:spPr/a:xfrm", PML), shape.find("p:grpSpPr/a:xfrm", PML),
+                             shape.find("p:xfrm", PML)) if x is not None and x.find("a:off", PML) is not None), None)
+    if xfrm is None:
+        ph = shape.find(".//p:nvPr/p:ph", PML)
+        if ph is None:
+            return None
+        for tree in inherited:
+            for other in tree:
+                theirs = other.find(".//p:nvPr/p:ph", PML)
+                if theirs is not None and (theirs.get("idx") == ph.get("idx") if ph.get("idx")
+                                           else theirs.get("type", "body") == ph.get("type", "body")):
+                    if box := shape_box(other, []):
+                        return box
+        return None
+    off, ext = xfrm.find("a:off", PML), xfrm.find("a:ext", PML)
+    return (int(off.get("x")), int(off.get("y")), int(ext.get("cx")), int(ext.get("cy")),
+            int(xfrm.get("rot", 0)) / 60000)
+
+
+def read_slides(path):
+    """The shown slides of a .pptx, in order: [{part, morph, duration, objects: [(name, box)]}],
+    and the slide size in EMU. None for anything that isn't a readable .pptx."""
+    try:
+        z = zipfile.ZipFile(path)
+        rels = part_rels(z, "ppt/presentation.xml")
+        pres = zip_xml(z, "ppt/presentation.xml")
+        size = pres.find("p:sldSz", PML)
+        slides = []
+        for sld in pres.find("p:sldIdLst", PML):
+            part = rels[sld.get(f"{{{PML['r']}}}id")][1]
+            root = zip_xml(z, part)
+            if root.get("show") == "0":
+                continue  # hidden slides are left out of the PDF too
+            inherited = []
+            layout = next((t for kind, t in part_rels(z, part).values() if kind == "slideLayout"), None)
+            if layout:
+                inherited.append(zip_xml(z, layout).find("p:cSld/p:spTree", PML))
+                master = next((t for kind, t in part_rels(z, layout).values() if kind == "slideMaster"), None)
+                if master:
+                    inherited.append(zip_xml(z, master).find("p:cSld/p:spTree", PML))
+            transition = root.find(".//p:transition", PML)
+            morph = any(e.tag == MORPH_TAG for e in root.iter())
+            speed = {"fast": 500, "med": 750, "slow": 1000}.get(transition.get("spd") if transition is not None else "", 1000)
+            duration = int(transition.get(P14_DUR, speed if not morph else 2000)) if transition is not None else 0
+            objects = []  # (name, box, position among the slide's shapes)
+            shapes = [c for c in root.find("p:cSld/p:spTree", PML) if local(c.tag) in SHAPES]
+            for k, shape in enumerate(shapes):
+                if box := shape_box(shape, inherited):
+                    name = shape.find(".//p:cNvPr", PML)
+                    objects.append((name.get("name", "") if name is not None else "", box, k))
+            slides.append({"part": part, "morph": morph, "duration": duration, "objects": objects})
+        return slides, (int(size.get("cx")), int(size.get("cy")))
+    except (OSError, KeyError, AttributeError, ValueError, TypeError, zipfile.BadZipFile, ElementTree.ParseError):
+        return None
+
+
+def morph_deck(path, slides, dst):
+    """Write a .pptx made for drawing Morph: for every slide in a Morph pair, its background alone,
+    then each object alone on black and on white (see sprite_image). Returns the page list:
+    [(slide, object or None, background color or None)], in the deck's order. Worker thread."""
+    z = zipfile.ZipFile(path)
+    wanted = sorted({i for i, slide in enumerate(slides) if slide["morph"] and i}
+                    | {i - 1 for i, slide in enumerate(slides) if slide["morph"] and i})
+    pages, parts = [], []
+    for i in wanted:
+        root = zip_xml(z, slides[i]["part"])
+        tree = root.find("p:cSld/p:spTree", PML)
+        shapes = [c for c in tree if local(c.tag) in SHAPES]
+
+        def variant(keep, background):
+            sprite = copy.deepcopy(root)
+            sprite_tree = sprite.find("p:cSld/p:spTree", PML)
+            for shape in [c for c in sprite_tree if local(c.tag) in SHAPES]:
+                sprite_tree.remove(shape)
+            if keep is not None:
+                sprite_tree.append(copy.deepcopy(keep))
+                sprite.set("showMasterSp", "0")  # no logos or footers from the master
+                cSld = sprite.find("p:cSld", PML)
+                for old in cSld.findall("p:bg", PML):
+                    cSld.remove(old)
+                cSld.insert(0, ElementTree.fromstring(
+                    f'<p:bg xmlns:p="{PML["p"]}" xmlns:a="{PML["a"]}"><p:bgPr><a:solidFill>'
+                    f'<a:srgbClr val="{background}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>'))
+            return ElementTree.tostring(sprite, encoding="unicode", xml_declaration=True)
+
+        parts.append(variant(None, None))
+        pages.append((i, None, None))
+        for n, (_, _, k) in enumerate(slides[i]["objects"]):
+            for background in ("000000", "FFFFFF"):
+                parts.append(variant(shapes[k], background))
+                pages.append((i, n, background))
+    # the deck: the original parts, with presentation.xml pointing at the new slides only
+    pres = zip_xml(z, "ppt/presentation.xml")
+    for extra in ("p:custShowLst", "p:extLst"):  # these name the old slides
+        for e in pres.findall(extra, PML):
+            pres.remove(e)
+    ids = pres.find("p:sldIdLst", PML)
+    for e in list(ids):
+        ids.remove(e)
+    rels = zip_xml(z, "ppt/_rels/presentation.xml.rels")
+    for rel in [r for r in rels if r.get("Type").endswith("/slide")]:
+        rels.remove(rel)
+    types_ = zip_xml(z, "[Content_Types].xml")
+    out = zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED)
+    for k, (page, xml) in enumerate(zip(pages, parts)):
+        name = f"ppt/slides/peek{k}.xml"
+        out.writestr(name, xml)
+        original = slides[page[0]]["part"]
+        folder, file = original.rsplit("/", 1)
+        if f"{folder}/_rels/{file}.rels" in z.namelist():
+            slide_rels = zip_xml(z, f"{folder}/_rels/{file}.rels")
+            for rel in [r for r in slide_rels if r.get("Type").rsplit("/", 1)[-1] in ("notesSlide", "comments")]:
+                slide_rels.remove(rel)
+            out.writestr(f"ppt/slides/_rels/peek{k}.xml.rels", ElementTree.tostring(slide_rels, encoding="unicode"))
+        ElementTree.SubElement(ids, f"{{{PML['p']}}}sldId", {"id": str(256 + k), f"{{{PML['r']}}}id": f"rIdPeek{k}"})
+        ElementTree.SubElement(rels, f"{{{PML['rel']}}}Relationship", {
+            "Id": f"rIdPeek{k}", "Target": f"slides/peek{k}.xml",
+            "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"})
+        ElementTree.SubElement(types_, f"{{{PML['ct']}}}Override", {
+            "PartName": f"/{name}",
+            "ContentType": "application/vnd.openxmlformats-officedocument.presentationml.slide+xml"})
+    out.writestr("ppt/presentation.xml", ElementTree.tostring(pres, encoding="unicode", xml_declaration=True))
+    out.writestr("ppt/_rels/presentation.xml.rels", ElementTree.tostring(rels, encoding="unicode"))
+    out.writestr("[Content_Types].xml", ElementTree.tostring(types_, encoding="unicode"))
+    for item in z.infolist():
+        if item.filename not in ("ppt/presentation.xml", "ppt/_rels/presentation.xml.rels", "[Content_Types].xml"):
+            out.writestr(item, z.read(item.filename))
+    out.close()
+    return pages
+
+
+def morph_pages(path, slides):
+    """The Morph deck rendered to PDF by OnlyOffice, cached: (pdf, page list), or None. Worker thread."""
+    key = cache_key(Path(path))
+    pdf, index = CACHE / f"{key}.morph.pdf", CACHE / f"{key}.morph.json"
+    if pdf.exists() and index.exists():
+        pdf.touch()
+        return pdf, [tuple(page) for page in json.loads(index.read_text())]
+    if not any(slide["morph"] for slide in slides) or not X2T.exists():
+        return None
+    (CACHE / "tmp").mkdir(parents=True, exist_ok=True)
+    deck = CACHE / "tmp" / f"morph-{os.getpid()}-{time.monotonic_ns()}.pptx"
+    part = CACHE / f"{key}.morph.part.pdf"
+    try:
+        pages = morph_deck(path, slides, deck)
+        x2t_convert(deck, part)
+    finally:
+        deck.unlink(missing_ok=True)
+    part.rename(pdf)
+    index.write_text(json.dumps(pages))
+    return pdf, pages
+
+
+def sprite_image(on_black, on_white):
+    """One object, cut out with its exact transparency from two renders: on black and on white.
+    Where the object covers the slide both agree; where the background shows through they differ by
+    how much of it shows, so alpha = 1 − (white − black), and the black render is the premultiplied color."""
+    import numpy as np
+    w, h = on_black.width(), on_black.height()
+    rows = lambda image: np.frombuffer(image.convertToFormat(QImage.Format_RGB32).constBits(), np.uint8) \
+        .reshape(h, -1)[:, :w * 4].reshape(h, w, 4).astype(np.int16)
+    black, white = rows(on_black), rows(on_white)
+    alpha = np.clip(255 - (white[..., :3] - black[..., :3]).mean(axis=2), 0, 255).astype(np.uint8)
+    out = np.empty((h, w, 4), np.uint8)
+    out[..., :3] = np.minimum(black[..., :3], alpha[..., None])  # premultiplied: color never above alpha
+    out[..., 3] = alpha
+    image = QImage(out.data, w, h, w * 4, QImage.Format_ARGB32_Premultiplied)
+    return image.copy()  # own the pixels: `out` goes away
+
+
+class SlideView(QWidget):
+    """A presentation one slide at a time: ↑ / ↓, Page Up / Down or the wheel move between slides.
+    Slides that come in with a Morph transition play it: each object glides to its new place, size and
+    turn while its look cross-fades; objects that come or go fade."""
+
+    def __init__(self, pdf, source):
+        super().__init__()
+        self.path, self.source = Path(pdf), Path(source)
+        self.doc = QPdfDocument(self)
+        self.doc.load(str(pdf))
+        self.count = self.doc.pageCount()
+        self.index = 0
+        self.cache = {}  # (doc, page, size): QImage
+        self.slides, self.size = read_slides(source) or (None, None)
+        if self.slides is not None and len(self.slides) != self.count:
+            self.slides = None  # the PDF doesn't match the slides we read: no Morph, just pages
+        self.morph_doc = None
+        self.morph_index = {}  # (slide, object, background): page of the Morph deck
+        self.animation = None
+        self.frame = None  # (from slide, to slide, t) while a Morph plays
+        self.wheel = 0
+        self.label = QLabel()
+        self.label.setEnabled(False)
+        bar = toolbar(self.label)
+        self.canvas = QWidget()
+        self.canvas.paintEvent = self.paint
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(bar)
+        layout.addWidget(self.canvas, 1)
+        QShortcut(QKeySequence.MoveToPreviousPage, self, lambda: self.go(-1))
+        QShortcut(QKeySequence.MoveToNextPage, self, lambda: self.go(1))
+        QShortcut("Home", self, lambda: self.go(-self.index))
+        QShortcut("End", self, lambda: self.go(self.count - 1 - self.index))
+        self.show_label()
+        if self.slides and importlib.util.find_spec("numpy"):  # numpy cuts the objects out (see sprite_image)
+            slides, source = self.slides, self.source
+            in_background(lambda: run_catching(lambda: morph_pages(source, slides)), self, self.got_morph,
+                          pool=_convert_pool)
+
+    def got_morph(self, result):
+        if not result or isinstance(result, Exception):
+            return
+        pdf, pages = result
+        self.morph_doc = QPdfDocument(self)
+        self.morph_doc.load(str(pdf))
+        self.morph_index = {tuple(page): n for n, page in enumerate(pages)}
+        self.show_label()
+
+    def show_label(self):
+        morph = self.slides and self.slides[self.index]["morph"]
+        self.label.setText(f"Slide {self.index + 1} of {self.count}" + ("  ·  Morph" if morph else ""))
+
+    def go(self, delta):
+        """Move `delta` slides; a Morph plays when the slide coming in (or, going back, the one leaving) has one."""
+        target = min(max(self.index + delta, 0), self.count - 1)
+        if target == self.index:
+            return
+        if self.animation:
+            self.animation.stop()
+        start, self.index = self.index, target
+        self.show_label()
+        morph_slide = max(start, target)
+        if abs(target - start) == 1 and self.can_morph(start, target):
+            duration = self.slides[morph_slide]["duration"] or 2000
+            self.animation = QVariantAnimation(self, startValue=0.0, endValue=1.0, duration=duration,
+                                               easingCurve=QEasingCurve.InOutCubic)
+            self.animation.valueChanged.connect(lambda t: self.set_frame((start, target, t)))
+            self.animation.finished.connect(lambda: self.set_frame(None))
+            self.animation.start()
+        else:
+            self.set_frame(None)
+
+    def set_frame(self, frame):
+        self.frame = frame
+        self.canvas.update()
+
+    def can_morph(self, a, b):
+        later = max(a, b)
+        return (self.morph_doc is not None and self.slides[later]["morph"]
+                and (a, None, None) in self.morph_index and (b, None, None) in self.morph_index)
+
+    def wheelEvent(self, event):
+        self.wheel += event.angleDelta().y()
+        while abs(self.wheel) >= 120:  # one notch, one slide; touchpads send many small steps
+            self.go(-1 if self.wheel > 0 else 1)
+            self.wheel -= 120 if self.wheel > 0 else -120
+
+    def slide_rect(self):
+        """Where the slide sits in the canvas: as big as fits, centered."""
+        page = self.doc.pagePointSize(0)
+        area = QRectF(self.canvas.rect()).adjusted(12, 12, -12, -12)
+        scale = min(area.width() / max(page.width(), 1), area.height() / max(page.height(), 1))
+        rect = QRectF(0, 0, page.width() * scale, page.height() * scale)
+        rect.moveCenter(area.center())
+        return rect
+
+    def render(self, doc, page, size):
+        key = (id(doc), page, size.width(), size.height())
+        if key not in self.cache:
+            if len(self.cache) > 60:  # a resize makes every cached size stale
+                self.cache.clear()
+            image = QImage(size, QImage.Format_RGB32)
+            image.fill(Qt.white)
+            painter = QPainter(image)
+            painter.drawImage(0, 0, doc.render(page, size))
+            painter.end()
+            self.cache[key] = image
+        return self.cache[key]
+
+    def sprite(self, slide, n, size):
+        key = ("sprite", slide, n, size.width(), size.height())
+        if key not in self.cache:
+            self.cache[key] = sprite_image(self.render(self.morph_doc, self.morph_index[(slide, n, "000000")], size),
+                                           self.render(self.morph_doc, self.morph_index[(slide, n, "FFFFFF")], size))
+        return self.cache[key]
+
+    def paint(self, event):
+        painter = QPainter(self.canvas)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        rect = self.slide_rect()
+        ratio = self.devicePixelRatioF()
+        size = (rect.size() * ratio).toSize()
+        if not self.frame:
+            painter.drawImage(rect, self.render(self.doc, self.index, size))
+            return
+        a, b, t = self.frame
+        painter.drawImage(rect, self.render(self.morph_doc, self.morph_index[(a, None, None)], size))
+        painter.setOpacity(t)
+        painter.drawImage(rect, self.render(self.morph_doc, self.morph_index[(b, None, None)], size))
+        scale = rect.width() / self.size[0]  # canvas pixels per EMU
+        theirs = {}
+        for n, (name, *_) in enumerate(self.slides[b]["objects"]):
+            theirs.setdefault(name, n)
+        mine = {}
+        for n, (name, *_) in enumerate(self.slides[a]["objects"]):
+            mine.setdefault(name, n)
+        # leaving objects first, then the arriving slide's objects in its own stacking order
+        for n, (name, box, _) in enumerate(self.slides[a]["objects"]):
+            if name not in theirs:
+                self.draw_object(painter, rect, scale, size, a, n, box, box, 1 - t)
+        for n, (name, box, _) in enumerate(self.slides[b]["objects"]):
+            if name in mine:
+                old = self.slides[a]["objects"][mine[name]][1]
+                now = tuple(o + (e - o) * t for o, e in zip(old, box))
+                # both looks travel together; each is solid for half the way so nothing dims midway
+                self.draw_object(painter, rect, scale, size, a, mine[name], old, now, min(1, 2 * (1 - t)))
+                self.draw_object(painter, rect, scale, size, b, n, box, now, min(1, 2 * t))
+            else:
+                self.draw_object(painter, rect, scale, size, b, n, box, box, t)
+
+    def draw_object(self, painter, rect, scale, size, slide, n, own, now, opacity):
+        """Object `n` of `slide` (drawn at `own`) moved, stretched and turned to `now`."""
+        if opacity <= 0 or (slide, n, "000000") not in self.morph_index:
+            return
+        x, y, w, h, turn = own
+        nx, ny, nw, nh, nturn = now
+        transform = QTransform()
+        transform.translate(rect.left() + (nx + nw / 2) * scale, rect.top() + (ny + nh / 2) * scale)
+        transform.rotate(nturn)
+        transform.scale(nw / w if w else 1, nh / h if h else 1)
+        transform.rotate(-turn)
+        transform.translate(-(rect.left() + (x + w / 2) * scale), -(rect.top() + (y + h / 2) * scale))
+        painter.save()
+        painter.setTransform(transform, True)
+        painter.setOpacity(opacity)
+        painter.drawImage(rect, self.sprite(slide, n, size))
+        painter.restore()
+
+
 class PdfEditor(QWidget):
     """Draw shapes, arrows, freehand lines, highlights and text on a PDF; save them as a new file."""
     done = Signal()
@@ -4834,8 +5216,8 @@ class Peek(QWidget):
         # Switched off while flying or typing in a search field
         self.shortcuts = [QShortcut(key, self, self.close) for key in ("Space", "Q")]
         self.shortcuts.append(QShortcut("Return", self, self.open_external))
-        self.shortcuts += [QShortcut(key, self, lambda: self.step(-1)) for key in ("Left", "Up")]
-        self.shortcuts += [QShortcut(key, self, lambda: self.step(1)) for key in ("Right", "Down")]
+        self.shortcuts += [QShortcut("Left", self, lambda: self.step(-1)), QShortcut("Right", self, lambda: self.step(1)),
+                           QShortcut("Up", self, lambda: self.vertical(-1)), QShortcut("Down", self, lambda: self.vertical(1))]
         self.shortcuts += [QShortcut("I", self, self.toggle_side),
                            QShortcut("C", self, self.toggle_side),
                            QShortcut(QKeySequence.Copy, self, self.copy_file),
@@ -4982,6 +5364,13 @@ class Peek(QWidget):
             self.player.pause()
         self.last_pos = pos
 
+    def vertical(self, delta):
+        """↑ / ↓ move between slides in a presentation, between files everywhere else."""
+        if isinstance(self.preview, SlideView):
+            self.preview.go(delta)
+        else:
+            self.step(delta)
+
     def step(self, delta):
         self.index = (self.index + delta) % len(self.files)
         self.show_file()
@@ -5058,6 +5447,8 @@ class Peek(QWidget):
                 self.set_preview(ModelView(out))
             elif source.suffix.lower() in WORD and pymupdf:
                 self.set_preview(WordView(out, source))
+            elif source.suffix.lower() in SLIDES:
+                self.set_preview(SlideView(out, source))
             else:
                 self.set_preview(DocView(out, source))
 
