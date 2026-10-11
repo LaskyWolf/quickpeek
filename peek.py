@@ -7,6 +7,7 @@ import gzip
 import importlib.util
 import hashlib
 import json
+import locale
 import mmap
 import os
 import pwd
@@ -32,9 +33,9 @@ from xml.sax.saxutils import escape
 
 import shiboken6
 from PySide6.QtCore import (QAbstractAnimation, QEasingCurve, QVariantAnimation, QFile, Q_ARG, Qt, QCollator, QDate, QEvent, QLibraryInfo, QLocale, QLineF, QMarginsF, QMimeData, QMetaObject, QMimeDatabase, QModelIndex, QObject,
-                            QPoint, QPointF, QProcess, QRectF, QSettings, QSize, QSizeF, QStandardPaths, QTimer, QUrl, Signal)
+                            QPoint, QPointF, QProcess, QRect, QRectF, QSettings, QSize, QSizeF, QStandardPaths, QTimer, QUrl, Signal)
 from PySide6.QtGui import (QTextCursor, QColor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QImageReader, QImageWriter, QKeySequence,
-                           QMovie, QPageSize, QPainter, QPainterPath, QPalette, QPen, QPdfWriter, QPixmap, QShortcut, QCursor, QFontMetrics, QTextDocument, QTransform)
+                           QMovie, QPageSize, QPainter, QPainterPath, QPalette, QPen, QPdfWriter, QPixmap, QShortcut, QCursor, QFontMetrics, QTextDocument, QTransform, QLinearGradient)
 from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer, QtAudio
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -817,6 +818,63 @@ class SearchBar(QFrame):
         return False
 
 
+class TextPopup(QFrame):
+    """A found text in a card floating next to it over `host`: select part of it, or copy it all."""
+
+    def __init__(self, host, copy_all):
+        super().__init__(host)
+        self.host = host
+        self.anchor = QRectF()  # scene rect of the text it belongs to
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setAutoFillBackground(True)
+        shadow = QGraphicsDropShadowEffect(self, blurRadius=18, offset=QPointF(0, 3))
+        shadow.setColor(QColor(0, 0, 0, 90))
+        self.setGraphicsEffect(shadow)
+        self.label = QLabel(wordWrap=True, textFormat=Qt.PlainText,
+                            textInteractionFlags=Qt.TextSelectableByMouse, cursor=Qt.IBeamCursor)
+        self.label.setMaximumWidth(420)
+        self.copy = QPushButton(QIcon.fromTheme("edit-copy"), "Copy")
+        self.copy.clicked.connect(self.copy_text)
+        everything = tool_button("edit-select-all", "Copy every text found in the image", copy_all,
+                                 text="Copy all")
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.copy)
+        buttons.addWidget(everything)
+        buttons.addStretch()
+        buttons.addWidget(tool_button("window-close", "Close (Esc)", self.hide))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 8, 8)
+        layout.addWidget(self.label)
+        layout.addLayout(buttons)
+        self.hide()
+
+    def open(self, text, anchor):
+        self.label.setText(text)
+        self.copy.setText("Copy")
+        self.anchor = anchor
+        self.show()
+        self.raise_()
+        self.place()
+
+    def copy_text(self):
+        QApplication.clipboard().setText(self.label.selectedText() or self.label.text())
+        self.copy.setText("Copied")
+
+    def place(self):
+        """Just below its text, or above when there's no room; always inside the view."""
+        if not self.isVisible():
+            return
+        self.adjustSize()
+        view = self.host
+        rect = view.mapFromScene(self.anchor).boundingRect()
+        top = view.viewport().mapTo(view, rect.bottomLeft()).y() + 8
+        if top + self.height() > view.height() - 8:
+            top = view.viewport().mapTo(view, rect.topLeft()).y() - self.height() - 8
+        left = view.viewport().mapTo(view, rect.topLeft()).x()
+        self.move(min(max(left, 8), max(view.width() - self.width() - 8, 8)),
+                  min(max(top, 8), max(view.height() - self.height() - 8, 8)))
+
+
 class DragIcon(QLabel):
     """The file's icon in the bottom bar: drag it into another app to hand over the file."""
 
@@ -875,6 +933,7 @@ class ZoomView(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.fitting = True
         self.picking = False  # clicks pick a subject instead of double-click zooming
+        self.reading_text = False  # clicks open a found text instead of double-click zooming
         self.pressed_at = QPointF()
         self.brush = 0  # subject brush side in picture pixels, 0 = none
         pen = QPen(Qt.white, 1.5, Qt.DashLine)
@@ -893,10 +952,13 @@ class ZoomView(QGraphicsView):
         self.brush_square.setRect(center.x() - size / 2, center.y() - size / 2, size, size)
         self.brush_square.setVisible(bool(self.picking and size and self.viewport().rect().contains(position)))
 
+    hovered = Signal(QPointF)  # scene point under the mouse
+
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
         if self.picking:
             self.show_brush(event.position().toPoint())
+        self.hovered.emit(self.mapToScene(event.position().toPoint()))
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
@@ -940,7 +1002,7 @@ class ZoomView(QGraphicsView):
         self.zoom(1.25 if event.angleDelta().y() > 0 else 1 / 1.25)
 
     def mouseDoubleClickEvent(self, event):
-        if not self.picking:
+        if not (self.picking or self.reading_text):
             self.actual_size() if self.fitting else self.fit()
 
     def resizeEvent(self, event):
@@ -949,60 +1011,101 @@ class ZoomView(QGraphicsView):
             self.fit()
 
 
-def ocr_words(image, key=None):
-    """Words tesseract finds in a QImage: [(text, (x, y, w, h), line id)]. Runs on a worker thread.
+def model_crop(image, rect, height):
+    """`rect` of `image` scaled to `height` px tall, as the 1×3×H×W BGR array PaddleOCR models read, values -1..1."""
+    import numpy as np
+    crop = image.copy(rect).convertToFormat(QImage.Format_RGB888)
+    width = min(max(round(crop.width() * height / max(crop.height(), 1)), 8), 3200)
+    crop = crop.scaled(width, height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+    rows = np.frombuffer(crop.constBits(), np.uint8).reshape(height, crop.bytesPerLine())
+    pixels = rows[:, :width * 3].reshape(height, width, 3)[:, :, ::-1].astype(np.float32) / 127.5 - 1
+    return np.ascontiguousarray(pixels.transpose(2, 0, 1)[None])
+
+
+def ocr_lines(image, key=None, progress=None):
+    """Lines of text in a QImage: [(text, (x, y, w, h))], top to bottom. Worker thread.
+    PaddleOCR: the detector marks where text is, the recognizer reads each found line.
     Cached by file key, so each image is read once."""
-    langs = [l for l in subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True)
-             .stdout.splitlines()[1:] if l.strip() not in ("", "osd", "equ")] or ["eng"]  # line 1 is a header
-    # The languages are part of the name: installing a new one re-reads images saved before it
-    cached = CACHE / f"{key}.{'+'.join(langs)}.ocr2.json" if key else None  # ocr2: the photo-friendly settings
+    import numpy as np
+    from scipy import ndimage
+    cached = CACHE / f"{key}.ocr5.json" if key else None
     if cached and cached.exists():
         cached.touch()
-        return [(t, tuple(box), tuple(line)) for t, box, line in json.loads(cached.read_text())]
-    (CACHE / "tmp").mkdir(parents=True, exist_ok=True)
-    png = CACHE / "tmp" / f"ocr-{os.getpid()}-{time.monotonic_ns()}.png"
-    # Tesseract wants letters ~20 px tall: enlarge small images (a phone photo of a card has 8 px text).
-    # Boxes are divided back by `factor`, so they still match the shown image.
-    longest = max(image.width(), image.height(), 1)
-    factor = 1 if longest >= 1000 else min(3, 2200 / longest)
-    gray = image.convertToFormat(QImage.Format_Grayscale8)
-    if factor > 1:
-        gray = gray.scaled(gray.size() * factor, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-    gray.save(str(png))
-    try:
-        # --psm 11 finds scattered words (photos, cards, signs) as well as plain pages;
-        # thresholding_method=2 (Sauvola) cleans patterned and uneven backgrounds.
-        # One thread: barely slower, and the rest of the PC stays responsive.
-        result = subprocess.run(["tesseract", str(png), "stdout", "-l", "+".join(langs), "--psm", "11",
-                                 "-c", "thresholding_method=2", "tsv"],
-                                capture_output=True, text=True, timeout=120,
-                                env={**os.environ, "OMP_THREAD_LIMIT": "1"})
-    finally:
-        png.unlink(missing_ok=True)
-    words = []
-    for row in result.stdout.splitlines()[1:]:
-        cols = row.split("\t")
-        # level 5 = a word; conf -1 = layout rows; low confidence is usually noise from pictures
-        if len(cols) == 12 and cols[0] == "5" and cols[11].strip() and float(cols[10]) >= 40:
-            box = tuple(round(int(v) / factor) for v in cols[6:10])
-            words.append((cols[11], box, tuple(map(int, cols[2:5]))))
+        return [(text, tuple(box)) for text, box in json.loads(cached.read_text())]
+    progress = progress or Progress()
+    detector = session(ensure_model("ocr_det", progress))
+    reader = session(ensure_model("ocr_rec", progress))
+    chars = ["", *ensure_model("ocr_dict", progress).read_text(encoding="utf-8").split("\n")[:-1], " "]
+
+    # Detector: the picture at most 1280 px long, sides a multiple of 32; out comes a 0..1 "text here" map
+    width, height = image.width(), image.height()
+    scale = min(1, OCR_SIDE / max(width, height, 1))
+    dw, dh = (max(32, round(side * scale / 32) * 32) for side in (width, height))
+    pixels = model_pixels(image, dw, dh)[:, ::-1]  # PaddleOCR models were trained on BGR pictures
+    text_map = detector.run(None, {"x": np.ascontiguousarray(pixels)})[0][0, 0]
+    labels, count = ndimage.label(text_map > 0.3)
+    scores = ndimage.mean(text_map, labels, range(1, count + 1))
+    sizes = ndimage.sum_labels(np.ones_like(text_map), labels, range(1, count + 1))
+    sx, sy = dw / width, dh / height
+    lines = []
+    # ponytail: straight boxes around each found line; strongly slanted text gets a loose box.
+    # Upgrade path: rotated rectangles (minimum-area box) and a straightened crop.
+    for (rows, cols), score, size in zip(ndimage.find_objects(labels), scores, sizes):
+        if score < 0.6 or size < 12:
+            continue  # faint or tiny: texture, not text
+        # the detector marks a line's shrunken core: grow it back by area × 1.5 / perimeter, as PaddleOCR does
+        grow = size * 1.5 / (2 * (rows.stop - rows.start + cols.stop - cols.start))
+        left, top = max(0, (cols.start - grow) / sx), max(0, (rows.start - grow) / sy)
+        right, bottom = min(width, (cols.stop + grow) / sx), min(height, (rows.stop + grow) / sy)
+        box = QRect(round(left), round(top), max(1, round(right - left)), max(1, round(bottom - top)))
+        crop = model_crop(image, box, 48)
+        if box.height() > 1.5 * box.width():  # a vertical line of text: read it turned on its side
+            crop = model_crop(image.transformed(QTransform().rotate(-90)),
+                              QRect(box.top(), width - box.right() - 1, box.height(), box.width()), 48)
+        odds = reader.run(None, {"x": crop})[0][0]
+        best = odds.argmax(1)
+        keep = (best != 0) & np.r_[True, best[1:] != best[:-1]]  # CTC: drop blanks and repeats
+        if not keep.any() or odds.max(1)[keep].mean() < 0.5:
+            continue
+        text = "".join(chars[i] for i in best[keep] if i < len(chars)).strip()
+        if text:
+            lines.append((text, (box.x(), box.y(), box.width(), box.height())))
+    lines = join_words(sorted(lines, key=lambda line: line[1][0]))
+    lines.sort(key=lambda line: (line[1][1] + line[1][3] / 2) // 10 * 10 + line[1][0] / 1e5)
     if cached:
-        cached.write_text(json.dumps(words))
-    return words
+        cached.write_text(json.dumps(lines))
+    return lines
 
 
-def ocr_text(words):
-    """Words back into lines and paragraphs."""
-    lines, last = [], None
-    for text, _, line in words:
-        if line == last:
-            lines[-1] += " " + text
+def join_words(lines):
+    """Pieces on the same row, close together and about as tall, as one line: the detector cuts big
+    headings at wide gaps. `lines` sorted left to right."""
+    out = []
+    for text, (x, y, w, h) in lines:
+        for i, (other, (ox, oy, ow, oh)) in enumerate(out):
+            overlap = min(y + h, oy + oh) - max(y, oy)
+            if 0.6 < h / oh < 1.6 and overlap > 0.5 * min(h, oh) and -0.2 * h < x - (ox + ow) < 1.2 * min(h, oh):
+                left, top = min(x, ox), min(y, oy)
+                out[i] = (f"{other} {text}", (left, top, x + w - left, max(y + h, oy + oh) - top))
+                break
         else:
-            if last and line[0] != last[0]:  # new text block; tesseract's "paragraphs" split almost every line
-                lines.append("")
-            lines.append(text)
-            last = line
-    return "\n".join(lines)
+            out.append((text, (x, y, w, h)))
+    return out
+
+
+def text_blocks(lines):
+    """Lines grouped into paragraphs: [[line index, ...]]. A line joins the block above it when it is
+    about as tall, starts below it within a line's height, and overlaps it sideways."""
+    blocks = []
+    for i, (_, (x, y, w, h)) in enumerate(lines):
+        for block in blocks:
+            _, (bx, by, bw, bh) = lines[block[-1]]
+            if 0.6 < h / bh < 1.6 and -0.3 * h < y - (by + bh) < h and x < bx + bw and bx < x + w:
+                block.append(i)
+                break
+        else:
+            blocks.append([i])
+    return blocks
 
 
 class ImagePane(QWidget):
@@ -1011,8 +1114,9 @@ class ImagePane(QWidget):
     def __init__(self, source, path=None):
         super().__init__()
         self.path = Path(path) if path else None
-        self.words = None  # None = not read yet
-        self.boxes = []
+        self.lines = None  # found text: [(text, (x, y, w, h))]; None = not read yet
+        self.blocks = []  # paragraphs: lists of line numbers (see text_blocks)
+        self.boxes = []  # one highlight per line, over the picture
         self.view = ZoomView()
         self.zoom_label = QLabel()
         self.view.zoomed.connect(lambda s: self.zoom_label.setText(f"{s * 100:.0f}%"))
@@ -1031,9 +1135,11 @@ class ImagePane(QWidget):
         self.image = image
 
         self.ocr_status = QLabel()
-        self.text_button = tool_button("edit-select-text", "Find the words in this image (T)", self.show_text,
-                                       text="Text", checkable=True)
-        self.text_button.setEnabled(bool(shutil.which("tesseract")))
+        self.text_button = tool_button("edit-select-text", "Find text in this image, then click it to copy (T)",
+                                       self.show_text, text="Text", checkable=True)
+        if not (has_onnx() and importlib.util.find_spec("scipy")):
+            self.text_button.setEnabled(False)
+            self.text_button.setToolTip("Install python-onnxruntime-cpu and python-scipy to find text")
         self.subject_button = tool_button("tools-wizard", "Pick a subject: click what to keep (S)", self.subject_mode,
                                           text="Subject", checkable=True)
         if not has_onnx():
@@ -1077,17 +1183,22 @@ class ImagePane(QWidget):
         self.subject_tray = Tray(less, self.reach, more)
         self.brush_tray = Tray(QLabel("Brush"), self.brush, self.brush_label)
         self.copy_tray = Tray(copy_subject, save_subject)
-        self.text = QPlainTextEdit(readOnly=True)
-        self.text.setProperty("peekFocus", True)  # selectable and copyable
-        copy = QPushButton(QIcon.fromTheme("edit-copy"), "Copy text")
-        copy.clicked.connect(lambda: QApplication.clipboard().setText(
-            self.text.textCursor().selectedText().replace("\u2029", "\n") or self.text.toPlainText()))
-        self.text_panel = vbox(self.text, copy)
-        self.text_panel.setFixedWidth(300)
+        self.popup = TextPopup(self.view, lambda: QApplication.clipboard().setText(self.all_text()))
+        self.ocr_progress = Progress()
+        self.ocr_ticker = QTimer(self, interval=250)
+        self.ocr_ticker.timeout.connect(lambda: self.ocr_status.setText(self.ocr_progress.text or "Finding text…"))
+        self.scan = None  # the band sweeping the picture while text is being found
+        self.reveal = None
+        self.hovered = None  # block under the mouse
+        self.view.clicked.connect(self.text_clicked)
+        self.view.hovered.connect(self.hover_text)
+        self.view.zoomed.connect(lambda _: self.popup.place())
+        for bar in (self.view.horizontalScrollBar(), self.view.verticalScrollBar()):
+            bar.valueChanged.connect(lambda _: self.popup.place())  # follows its text while panning
         self.search = SearchBar(self.view, self)
         self.search.changed.connect(lambda text: self.find(text, 0))
         self.search.step.connect(lambda delta: self.find(self.search.edit.text(), delta))
-        self.search.edit.textEdited.connect(lambda _: self.words is None and self.read_text())
+        self.search.edit.textEdited.connect(lambda _: self.lines is None and self.read_text())
         self.matches, self.match = [], -1
 
         self.zoom_label.setMinimumWidth(44)
@@ -1106,14 +1217,10 @@ class ImagePane(QWidget):
                        tool_button("zoom-in", "Zoom in (+)", lambda: self.view.zoom(1.25)),
                        tool_button("zoom-original", "Actual size (1)", self.view.actual_size),
                        tool_button("zoom-fit-best", "Fit window (0)", self.view.fit)))
-        body = QHBoxLayout()
-        body.addWidget(self.view, 1)
-        body.addWidget(self.text_panel)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(bar)
-        layout.addLayout(body, 1)
-        self.text_panel.hide()  # after parenting, or it pops up as its own window
+        layout.addWidget(self.view, 1)
         self.subject_tray.hide()
         self.copy_tray.hide()
         self.brush_tray.hide()
@@ -1143,6 +1250,8 @@ class ImagePane(QWidget):
         self.view.brush = size
 
     def subject_mode(self, on):
+        if on:
+            self.text_button.setChecked(False)  # one click mode at a time
         self.view.picking = on
         self.brush_tray.setVisible(on)
         self.view.show_brush()
@@ -1409,49 +1518,138 @@ class ImagePane(QWidget):
         else:
             self.subject_status.setText("Couldn't write the PNG")
 
+    # ---- text: T finds every line of text; click one to see and copy its paragraph
+
     def show_text(self, on):
-        self.text_panel.setVisible(on)
+        if on:
+            self.subject_button.setChecked(False)
+        self.view.reading_text = on
+        self.popup.hide()
         for box in self.boxes:
             box.setVisible(on)
-        if on and self.words is None:
+        if on and self.lines is None:
             self.read_text()
 
     def read_text(self):
-        if self.words is not None or self.ocr_status.text() or not self.text_button.isEnabled():
+        if self.lines is not None or self.ocr_ticker.isActive() or not self.text_button.isEnabled():
             return  # already read, or reading
-        self.ocr_status.setText("Reading text…")
+        self.ocr_status.setText("Finding text…")
+        self.ocr_ticker.start()
+        self.start_scan()
         key = cache_key(self.path) if self.path and self.path.is_file() else None
-        in_background(lambda: ocr_words(self.image, key), self, self.got_words)
+        image, progress = self.image, self.ocr_progress
+        in_background(lambda: run_catching(lambda: ocr_lines(image, key, progress)), self, self.got_lines,
+                      pool=_convert_pool)
 
-    def got_words(self, words):
-        self.words = words
-        self.ocr_status.setText(f"{len(words)} words" if words else "No text found")
-        self.text.setPlainText(ocr_text(words))
+    def start_scan(self):
+        """A soft band of the accent color sweeping down the picture while the model looks for text."""
+        rect = QRectF(self.image.rect())
+        band = rect.height() * 0.12
+        glow = QLinearGradient(0, 0, 0, band)
         accent = self.palette().highlight().color()
-        fill = QColor(accent)
-        fill.setAlpha(45)
-        pen = QPen(accent, 0)  # 0 = one screen pixel at any zoom
-        for _, (x, y, w, h), _ in words:
-            box = self.view.scene().addRect(x - 1, y - 1, w + 2, h + 2, pen, fill)
+        for stop, alpha in ((0, 0), (0.7, 90), (1, 0)):
+            color = QColor(accent)
+            color.setAlpha(alpha)
+            glow.setColorAt(stop, color)
+        item = self.view.scene().addRect(QRectF(0, 0, rect.width(), band), Qt.NoPen, glow)
+        item.setZValue(5)
+        self.scan = QVariantAnimation(self, startValue=-band, endValue=rect.height(), duration=1400, loopCount=-1,
+                                      easingCurve=QEasingCurve.InOutSine)
+        self.scan.valueChanged.connect(lambda y: item.setPos(rect.left(), y))
+        self.scan.item = item
+        self.scan.start()
+
+    def got_lines(self, lines):
+        self.ocr_ticker.stop()
+        if self.scan:
+            self.scan.stop()
+            self.view.scene().removeItem(self.scan.item)
+            self.scan = None
+        if isinstance(lines, Exception):
+            self.ocr_status.setText(f"Text finding failed: {str(lines)[:100]}")
+            return
+        self.lines = lines
+        self.blocks = text_blocks(lines)
+        self.ocr_status.setText(f"{len(lines)} lines found · click one to copy it" if lines else "No text found")
+        accent = self.palette().highlight().color()
+        edge = QColor(accent)
+        edge.setAlpha(170)
+        pen = QPen(edge, 1.5)
+        pen.setCosmetic(True)  # the same hairline at any zoom
+        for _, (x, y, w, h) in lines:
+            path = QPainterPath()
+            pad = max(2, h * 0.12)
+            path.addRoundedRect(QRectF(x - pad, y - pad, w + 2 * pad, h + 2 * pad), h * 0.25, h * 0.25)
+            box = self.view.scene().addPath(path, pen)
+            box.setZValue(4)
+            box.setOpacity(0)
             box.setVisible(self.text_button.isChecked())
             self.boxes.append(box)
+        self.paint_boxes()
+        # the boxes appear where the scanning band passes, top to bottom
+        height = max(self.image.height(), 1)
+        self.reveal = QVariantAnimation(self, startValue=0.0, endValue=1.3, duration=700,
+                                        easingCurve=QEasingCurve.OutCubic)
+        self.reveal.valueChanged.connect(lambda t: [box.setOpacity(min(max((t * height - y) / (0.3 * height), 0), 1))
+                                                    for box, (_, (_, y, _, _)) in zip(self.boxes, lines)])
+        self.reveal.start()
         if self.search.edit.text():
             self.find(self.search.edit.text(), 0)
 
-    def find(self, text, delta):
-        """Highlight words containing `text`; Enter moves to the next one."""
+    def block_at(self, point):
+        return next((n for n, block in enumerate(self.blocks)
+                     if any(self.boxes[i].contains(point) for i in block)), None)
+
+    def paint_boxes(self, strong=()):
+        """Fill each line: brighter under the mouse, on the open text and on search matches."""
         accent = self.palette().highlight().color()
+        lit = set(strong)
+        for n in (self.hovered, self.popup.isVisible() and getattr(self.popup, "block", None)):
+            if n is not None and n is not False:
+                lit.update(self.blocks[n])
+        for i, box in enumerate(self.boxes):
+            fill = QColor(accent)
+            fill.setAlpha(120 if i in lit else 40)
+            box.setBrush(fill)
+
+    def hover_text(self, point):
+        if not self.view.reading_text or not self.lines:
+            return
+        block = self.block_at(point)
+        if block != self.hovered:
+            self.hovered = block
+            self.view.viewport().setCursor(Qt.PointingHandCursor if block is not None else Qt.OpenHandCursor)
+            self.paint_boxes()
+
+    def text_clicked(self, point, modifiers):
+        if not self.view.reading_text or not self.lines:
+            return
+        block = self.block_at(point)
+        if block is None:  # a click beside the text closes it
+            self.popup.hide()
+        else:
+            self.popup.block = block
+            rect = QRectF()
+            for i in self.blocks[block]:
+                rect = rect.united(self.boxes[i].sceneBoundingRect())
+            self.popup.open("\n".join(self.lines[i][0] for i in self.blocks[block]), rect)
+        self.paint_boxes()
+
+    def all_text(self):
+        return "\n\n".join("\n".join(self.lines[i][0] for i in block) for block in self.blocks)
+
+    def find(self, text, delta):
+        """Highlight lines containing `text`; Enter moves to the next one."""
         if delta == 0:
-            self.matches = [i for i, (word, _, _) in enumerate(self.words or [])
-                            if text and text.lower() in word.lower()]
+            self.matches = [i for i, (line, _) in enumerate(self.lines or [])
+                            if text and text.lower() in line.lower()]
             self.match = -1
+            self.paint_boxes(self.matches)
             for i, box in enumerate(self.boxes):
-                strong = i in self.matches
-                fill = QColor(accent)
-                fill.setAlpha(140 if strong else 45)
-                box.setBrush(fill)
-                box.setVisible(strong or self.text_button.isChecked())
-        if self.words is None:
+                box.setVisible(i in self.matches or self.text_button.isChecked())
+                if i in self.matches:
+                    box.setOpacity(1)
+        if self.lines is None:
             self.search.label.setText("reading…" if text else "")
             return
         if not self.matches:
@@ -3251,6 +3449,7 @@ def details_html(sections):
 
 # ---------------------------------------------------------------- local AI (runs on this PC, nothing is uploaded)
 
+OCR_SIDE = 1280  # longest side the text detector sees, in pixels
 MODELS_DIR = Path.home() / ".local/share/peek/models"  # not in the cache: cleanup must never delete these
 AI_MODELS = {  # name: (file, url, size in bytes) -- downloaded the first time a tool is used
     # Segment Anything 2.1 (Hiera Base+), zipped: the encoder reads a picture once, the decoder turns each
@@ -3267,6 +3466,13 @@ AI_MODELS = {  # name: (file, url, size in bytes) -- downloaded the first time a
                  "https://github.com/danielgatis/rembg/releases/download/v0.0.0/"
                  "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
                  224005088),
+    # PaddleOCR PP-OCRv5 (Apache-2.0): the detector finds lines of text, the recognizer reads Latin-script lines
+    "ocr_det": ("ppocrv5-det.onnx", "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/detection/v5/det.onnx",
+                88030804),
+    "ocr_rec": ("ppocrv5-latin-rec.onnx",
+                "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/latin/rec.onnx", 7862832),
+    "ocr_dict": ("ppocrv5-latin-dict.txt",
+                 "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/latin/dict.txt", 1634),
 }
 _model_locks = {name: threading.Lock() for name in AI_MODELS}  # two tools asking at once download once
 
@@ -3322,6 +3528,9 @@ def sam2_files(progress):
 
 def session(path, keep=True):
     """An ONNX Runtime session for a model file. `keep`: cached for the next picture."""
+    # Qt switches C number formatting to the system locale. onnxruntime imported under a decimal-comma
+    # locale (it_IT, de_DE...) misreads some models: the text detector then finds nothing.
+    locale.setlocale(locale.LC_NUMERIC, "C")
     import onnxruntime
     if path in _sessions:
         return _sessions[path]
@@ -4205,6 +4414,11 @@ class Peek(QWidget):
                 self.preview.set_editing(False)
         elif isinstance(self.preview, ImagePane) and self.preview.subject_button.isChecked():
             self.preview.leave_subject()
+        elif isinstance(self.preview, ImagePane) and self.preview.popup.isVisible():
+            self.preview.popup.hide()
+            self.preview.paint_boxes()
+        elif isinstance(self.preview, ImagePane) and self.preview.text_button.isChecked():
+            self.preview.text_button.setChecked(False)
         elif (bar := self.preview.findChild(SearchBar)) and bar.isVisible():
             bar.close_bar()
         elif self.isFullScreen():

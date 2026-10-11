@@ -224,32 +224,50 @@ assert not w.panel.isVisible() and not w.panel_button.isChecked()
 QTest.keyClick(w, Qt.Key_Right)  # preloaded neighbour
 assert w.windowTitle() == "img10.png" and isinstance(w.preview, peek.ImagePane)
 
-# OCR on request: T reads the words, boxes appear, Ctrl+F highlights a match
-if peek.shutil.which("tesseract"):
+# Text: T finds each line, a click shows its paragraph in a popup, Ctrl+F highlights a match
+models = Path.home() / ".local/share/peek/models"
+if peek.has_onnx() and all((models / peek.AI_MODELS[n][0]).exists() for n in ("ocr_det", "ocr_rec", "ocr_dict")):
     from PySide6.QtGui import QFont
-    page = QImage(900, 220, QImage.Format_RGB32)
+    page = QImage(900, 260, QImage.Format_RGB32)
     page.fill(Qt.white)
     p = QPainter(page)
     font = QFont("DejaVu Sans")
     font.setPixelSize(48)
     p.setFont(font)
     p.drawText(30, 90, "Quick previews")
-    p.drawText(30, 170, "need sharp words")
+    p.drawText(30, 150, "need sharp words")
+    font.setPixelSize(30)
+    p.setFont(font)
+    p.drawText(560, 230, "Città")
     p.end()
     page.save(str(d / "words.png"))
     pane = show("words.png")
     QTest.keyClick(w, Qt.Key_T)
-    assert wait(lambda: pane.words is not None, 20000), "OCR finished"
-    assert "previews" in pane.text.toPlainText() and "sharp" in pane.text.toPlainText(), pane.text.toPlainText()
-    assert pane.boxes and pane.boxes[0].isVisible()
+    assert pane.scan is not None, "a band sweeps the picture while reading"
+    assert wait(lambda: pane.lines is not None, 60000), "text found"
+    assert [t for t, _ in pane.lines] == ["Quick previews", "need sharp words", "Città"], pane.lines
+    assert pane.blocks == [[0, 1], [2]], pane.blocks
+    assert pane.scan is None and pane.boxes[0].isVisible()
+    assert wait(lambda: pane.boxes[-1].opacity() == 1), "boxes appear"
+    x, y, bw, bh = pane.lines[1][1]
+    pane.view.clicked.emit(QPointF(x + 5, y + bh / 2), Qt.NoModifier)
+    assert pane.popup.isVisible() and pane.popup.label.text() == "Quick previews\nneed sharp words"
+    pane.popup.copy.click()
+    assert QApplication.clipboard().text() == "Quick previews\nneed sharp words"
+    pane.view.clicked.emit(QPointF(850, 20), Qt.NoModifier)  # beside the text: closes
+    assert not pane.popup.isVisible()
+    assert pane.all_text() == "Quick previews\nneed sharp words\n\nCittà"
     pane.search.open_bar()
     QTest.keyClicks(pane.search.edit, "sharp")
     assert pane.search.label.text() == "1 of 1", pane.search.label.text()
     pane.search.close_bar()
-    assert peek.ocr_words(page, peek.cache_key(d / "words.png"))[0][0] == "Quick"  # second time: from cache
+    QTest.keyClick(w, Qt.Key_Escape)  # leaves text mode, keeps the window
+    assert not pane.text_button.isChecked() and w.isVisible()
+    assert peek.ocr_lines(page, peek.cache_key(d / "words.png"))[0][0] == "Quick previews"  # second time: from cache
     show("img10.png")
 else:
-    print("skipped OCR: tesseract not installed")
+    print("skipped text finding: onnxruntime or the PaddleOCR models are missing")
+assert peek.join_words([("Summer", (0, 0, 100, 40)), ("2026", (130, 2, 80, 40))]) == [("Summer 2026", (0, 0, 210, 42))]
 
 # F11 fullscreen, Escape leaves it before closing
 QTest.keyClick(w, Qt.Key_F11)

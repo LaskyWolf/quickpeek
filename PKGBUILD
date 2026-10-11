@@ -8,15 +8,14 @@ license=(custom)
 depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d qt6-webengine glib2)
 optdepends=(
   'python-pymupdf: PDF editor'
-  'python-numpy: subject picking and background removal'
-  'python-onnxruntime-cpu: AI tools (subject picking, background removal)'
-  'python-scipy: cleaner subject cut-outs'
+  'python-numpy: subject picking and finding text in images'
+  'python-onnxruntime-cpu: AI tools (subject picking, finding text in images)'
+  'python-scipy: cleaner subject cut-outs, finding text in images'
   'python-pillow: more image formats'
   'python-openpyxl: spreadsheet preview'
   'python-pygments: code highlighting'
   'ffmpeg: video thumbnails, conversions and audio waveforms'
   'krita: full-size preview of Krita archives (.krz)'
-  'tesseract: text in images (OCR)'
   'poppler: PDF thumbnails'
   'ghostscript: PostScript preview'
   '7zip: more archive formats'
