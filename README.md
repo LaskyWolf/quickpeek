@@ -2,7 +2,7 @@
 
 Quick file previewer for KDE Plasma. Select a file and press Space.
 
-> **Hobby project.** I made this for fun, to learn. It has no goal beyond that. It comes with no support: please don't open issues, feature requests or pull requests. It may break or change at any time.
+> **Hobby project.** I made this for fun, to learn. It has no goal beyond that. It comes with no support: issues are open but I cannot promise imminent fixes. It may break or change at any time.
 
 ## Install
 
