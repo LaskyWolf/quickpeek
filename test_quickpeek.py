@@ -18,7 +18,9 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QGraphicsView, QToolButton, QLabel, QPlainTextEdit, QApplication
 
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()  # window size settings go to a throwaway folder
+os.environ["QSG_RENDER_LOOP"] = "threaded"  # inherited from the desktop: the threaded loop freezes 3D views
 import quickpeek
+assert os.environ["QSG_RENDER_LOOP"] == "basic"
 
 app = QApplication([])
 QLocale.setDefault(QLocale(QLocale.Italian, QLocale.Italy))  # fixed locale: results don't depend on the machine

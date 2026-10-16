@@ -96,8 +96,9 @@ if (Path(QLibraryInfo.path(QLibraryInfo.PluginsPath)) / "multimedia/libgstreamer
     os.environ.setdefault("QT_MEDIA_BACKEND", "gstreamer")
 # Draw Qt Quick (the 3D view) on the main thread. Its own render thread calls into PySide objects, which
 # needs Python's lock; when the main thread holds that lock while waiting for the render thread (showing
-# or hiding a 3D view from Python), both wait forever and the app is killed as frozen.
-os.environ.setdefault("QSG_RENDER_LOOP", "basic")
+# or hiding a 3D view from Python), both wait forever and the app is killed as frozen. Overwritten, not
+# defaulted: a desktop that sets QSG_RENDER_LOOP=threaded for itself passes it to every app it starts.
+os.environ["QSG_RENDER_LOOP"] = "basic"
 SOCKET = f"quickpeek-{os.getuid()}"  # one quickpeek window per user; later launches hand their file to it
 
 TEXT_LIMIT = 1_000_000  # bytes shown for text files, so a 2 GB log doesn't freeze the window
