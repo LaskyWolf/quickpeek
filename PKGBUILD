@@ -27,7 +27,7 @@ optdepends=(
   'plasma-workspace: set as wallpaper'
   'dolphin: show in folder'
 )
-source=(quickpeek.py quickpeek-desktop.py quickpeek.desktop quickpeek-app.desktop icons/quickpeek.svg)
+source=(quickpeek.py quickpeek-desktop.py quickpeek.desktop quickpeek-app.desktop quickpeek.svg)
 sha256sums=(SKIP SKIP SKIP SKIP SKIP)
 
 pkgver() {

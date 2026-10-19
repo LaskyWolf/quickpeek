@@ -112,9 +112,7 @@ fi
 
 # 3. The app itself
 if [ -n "$SOURCE" ]; then
-    mkdir -p "$work/icons"
-    cp "$SOURCE"/quickpeek.py "$SOURCE"/quickpeek-desktop.py "$SOURCE"/quickpeek.desktop "$SOURCE"/quickpeek-app.desktop "$SOURCE"/LICENSE "$work"/
-    cp "$SOURCE"/icons/quickpeek.svg "$work/icons/"
+    cp "$SOURCE"/quickpeek.py "$SOURCE"/quickpeek-desktop.py "$SOURCE"/quickpeek.desktop "$SOURCE"/quickpeek-app.desktop "$SOURCE"/quickpeek.svg "$SOURCE"/LICENSE "$work"/
 else
     say "Downloading KDEQuickPeek ($REF)"
     curl -fsSL "$REPO/archive/$REF.tar.gz" | tar -xz -C "$work" --strip-components=1
@@ -130,7 +128,7 @@ sed "s|^Exec=quickpeek |Exec=$BIN/quickpeek |" "$work"/quickpeek.desktop > "$MEN
 chmod +x "$MENU/quickpeek.desktop"
 # The entry in the application menu, with its icon
 sed "s|^Exec=quickpeek|Exec=$BIN/quickpeek|" "$work"/quickpeek-app.desktop > "$APPS/quickpeek.desktop"
-cp "$work"/icons/quickpeek.svg "$ICONS/quickpeek.svg"
+cp "$work"/quickpeek.svg "$ICONS/quickpeek.svg"
 
 quit_running  # an older version still running in the background
 say "Installed KDEQuickPeek."
