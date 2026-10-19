@@ -16,6 +16,8 @@ BIN="$HOME/.local/bin"
 APP="$HOME/.local/share/quickpeek/app"
 VENV="$HOME/.local/share/quickpeek/venv"
 MENU="$HOME/.local/share/kio/servicemenus"
+APPS="$HOME/.local/share/applications"
+ICONS="$HOME/.local/share/icons/hicolor/scalable/apps"
 
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 fail() { printf '\033[31mError: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -29,7 +31,7 @@ ask_from_tty() { if [ -z "$YES" ] && [ -r /dev/tty ]; then "$@" </dev/tty; else 
 uninstall() {
     quit_running
     if [ -x "$BIN/quickpeek-desktop" ]; then "$BIN/quickpeek-desktop" uninstall >/dev/null 2>&1 || true; fi
-    rm -f "$BIN/quickpeek" "$BIN/quickpeek-desktop" "$MENU/quickpeek.desktop"
+    rm -f "$BIN/quickpeek" "$BIN/quickpeek-desktop" "$MENU/quickpeek.desktop" "$APPS/quickpeek.desktop" "$ICONS/quickpeek.svg"
     rm -rf "$HOME/.local/share/quickpeek/app" "$VENV"
     say "Removed. Settings and downloaded AI models stay in ~/.config/quickpeek and ~/.local/share/quickpeek."
     exit 0
@@ -110,12 +112,14 @@ fi
 
 # 3. The app itself
 if [ -n "$SOURCE" ]; then
-    cp "$SOURCE"/quickpeek.py "$SOURCE"/quickpeek-desktop.py "$SOURCE"/quickpeek.desktop "$SOURCE"/LICENSE "$work"/
+    mkdir -p "$work/icons"
+    cp "$SOURCE"/quickpeek.py "$SOURCE"/quickpeek-desktop.py "$SOURCE"/quickpeek.desktop "$SOURCE"/quickpeek-app.desktop "$SOURCE"/LICENSE "$work"/
+    cp "$SOURCE"/icons/quickpeek.svg "$work/icons/"
 else
     say "Downloading KDEQuickPeek ($REF)"
     curl -fsSL "$REPO/archive/$REF.tar.gz" | tar -xz -C "$work" --strip-components=1
 fi
-mkdir -p "$BIN" "$APP" "$MENU"
+mkdir -p "$BIN" "$APP" "$MENU" "$APPS" "$ICONS"
 cp "$work"/quickpeek.py "$work"/quickpeek-desktop.py "$work"/LICENSE "$APP"/
 for name in quickpeek quickpeek-desktop; do
     printf '#!/bin/sh\nexec "%s" "%s/%s.py" "$@"\n' "$PYTHON" "$APP" "$name" > "$BIN/$name"
@@ -124,6 +128,9 @@ done
 # Dolphin's right-click entry; Plasma 6 only loads executable service menus from the home folder
 sed "s|^Exec=quickpeek |Exec=$BIN/quickpeek |" "$work"/quickpeek.desktop > "$MENU/quickpeek.desktop"
 chmod +x "$MENU/quickpeek.desktop"
+# The entry in the application menu, with its icon
+sed "s|^Exec=quickpeek|Exec=$BIN/quickpeek|" "$work"/quickpeek-app.desktop > "$APPS/quickpeek.desktop"
+cp "$work"/icons/quickpeek.svg "$ICONS/quickpeek.svg"
 
 quit_running  # an older version still running in the background
 say "Installed KDEQuickPeek."

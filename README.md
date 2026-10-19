@@ -26,7 +26,7 @@ On Arch or CachyOS you can build a package instead, from a clone of this reposit
 makepkg -si
 ```
 
-Both ways install `quickpeek`, `quickpeek-desktop` and the "Quick Preview" entry in Dolphin's right-click menu.
+Both ways install `quickpeek`, `quickpeek-desktop`, the "Quick Preview" entry in Dolphin's right-click menu and a "KDEQuickPeek" entry in the application menu. The menu entry only opens a short window that says it works: previews start from Dolphin.
 
 Some previews use other programs when they are installed: ffmpeg (video and audio), poppler (PDF thumbnails), 7zip or libarchive (archives), assimp and blender (3D models), krita, onlyoffice (Office files and presentations). See `optdepends` in `PKGBUILD` for the full list.
 

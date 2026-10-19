@@ -27,8 +27,8 @@ optdepends=(
   'plasma-workspace: set as wallpaper'
   'dolphin: show in folder'
 )
-source=(quickpeek.py quickpeek-desktop.py quickpeek.desktop)
-sha256sums=(SKIP SKIP SKIP)
+source=(quickpeek.py quickpeek-desktop.py quickpeek.desktop quickpeek-app.desktop icons/quickpeek.svg)
+sha256sums=(SKIP SKIP SKIP SKIP SKIP)
 
 pkgver() {
   cd "$startdir"
@@ -39,4 +39,6 @@ package() {
   install -Dm755 quickpeek.py "$pkgdir/usr/bin/quickpeek"
   install -Dm755 quickpeek-desktop.py "$pkgdir/usr/bin/quickpeek-desktop"
   install -Dm644 quickpeek.desktop "$pkgdir/usr/share/kio/servicemenus/quickpeek.desktop"
+  install -Dm644 quickpeek-app.desktop "$pkgdir/usr/share/applications/quickpeek.desktop"
+  install -Dm644 quickpeek.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/quickpeek.svg"
 }

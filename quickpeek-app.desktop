@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=KDEQuickPeek
+GenericName=File Previewer
+Comment=Select a file in Dolphin and press Space to preview it
+Exec=quickpeek
+Icon=quickpeek
+Terminal=false
+Categories=Utility;
+Keywords=preview;files;peek;

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""KDEQuickPeek (command: quickpeek): quick file previewer (GNOME Sushi clone) for KDE. Usage: quickpeek FILE | quickpeek --quit"""
+"""KDEQuickPeek (command: quickpeek): quick file previewer (GNOME Sushi clone) for KDE. Usage: quickpeek FILE | quickpeek --quit (no argument: a short "it works" window)"""
 import configparser
 import datetime
 import functools
@@ -5786,11 +5786,25 @@ def move_old_files():
         settings.rename(settings.with_name("quickpeek.conf"))
 
 
+def ready_box():
+    """What starting quickpeek from the menu shows: it has no window of its own, previews open from Dolphin."""
+    box = QMessageBox()
+    box.setWindowTitle("KDEQuickPeek")
+    box.setText("KDEQuickPeek is installed and working.")
+    box.setInformativeText("Select a file in Dolphin and press Space, or right-click it and choose Quick Preview.")
+    box.setIconPixmap(QIcon.fromTheme("quickpeek", QIcon.fromTheme("view-preview")).pixmap(64, 64))
+    return box
+
+
 def main():
     move_old_files()  # ponytail: drop once no install still has the old folders
     app = QApplication(sys.argv)
     if sys.argv[1:] == ["--quit"]:  # stop the hidden background quickpeek, e.g. after updating quickpeek
         print("stopped" if send_to_running("--quit") else "quickpeek is not running")
+        return 0
+    if len(sys.argv) == 1:  # started from the menu
+        app.setDesktopFileName("quickpeek")
+        ready_box().exec()
         return 0
     path = Path(to_local_path(sys.argv[1])) if len(sys.argv) == 2 else None
     if not path or not path.exists():

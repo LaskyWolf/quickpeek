@@ -909,4 +909,8 @@ if importlib.util.find_spec("numpy"):
 codes = [code for code, _ in quickpeek.convert_targets(d / "img2.png")]
 assert [c for c in codes if c in quickpeek.AI_TARGETS] == [c for c, _ in quickpeek.ai_image_targets()], codes
 
+# Started from the menu without a file: a short window, not an error
+box = quickpeek.ready_box()
+assert "working" in box.text() and "Space" in box.informativeText()
+
 print("ok")
