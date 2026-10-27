@@ -747,7 +747,8 @@ def dolphin_view_settings(folder):
     dolphinrc = configparser.ConfigParser(interpolation=None, strict=False)
     dolphinrc.read(Path.home() / ".config/dolphinrc")
     texts = []
-    if dolphinrc.get("General", "GlobalViewProps", fallback="false") != "true":
+    per_folder = dolphinrc.get("General", "GlobalViewProps", fallback="false") != "true"
+    if per_folder:
         try:  # Dolphin 24+ stores per-folder view settings as an extended attribute on the folder
             texts.append(os.getxattr(folder, "user.kde.fm.viewproperties#1").decode())
         except OSError:
@@ -755,6 +756,9 @@ def dolphin_view_settings(folder):
         for file in (Path(folder) / ".directory", VIEW_PROPS / str(folder).lstrip("/") / ".directory"):
             if file.is_file():
                 texts.append(file.read_text(errors="replace"))
+    # Until its view is changed, Dolphin shows the Downloads folder newest first, folders mixed in
+    downloads_default = per_folder and not texts and (
+        Path(folder) == Path(QStandardPaths.writableLocation(QStandardPaths.DownloadLocation)))
     if (VIEW_PROPS / "global/.directory").is_file():
         texts.append((VIEW_PROPS / "global/.directory").read_text(errors="replace"))
     for text in texts:
@@ -771,6 +775,8 @@ def dolphin_view_settings(folder):
             settings["hidden_last"] = section.get("SortHiddenLast", "false") == "true"
             settings["show_hidden"] = section.get("HiddenFilesShown", "false") == "true"
             break
+    if downloads_default:
+        settings.update(role="modificationtime", descending=True, folders_first=False)
     return settings
 
 

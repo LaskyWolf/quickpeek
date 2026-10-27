@@ -334,6 +334,14 @@ sizes = [(d / n).stat().st_size for n in order[1:]]
 assert sizes == sorted(sizes, reverse=True), order
 (d / ".directory").unlink()
 
+# The Downloads folder without its own settings: newest first, folders mixed in, like Dolphin
+downloads = Path(tempfile.mkdtemp())
+(Path(os.environ["XDG_CONFIG_HOME"]) / "user-dirs.dirs").write_text(f'XDG_DOWNLOAD_DIR="{downloads}"\n')
+for age, name in enumerate(["new.svg", "folder", "a.af", "old1.svg"]):
+    (downloads / name).mkdir() if name == "folder" else (downloads / name).write_text("")
+    os.utime(downloads / name, (1e9 - age, 1e9 - age))
+assert [p.name for p in quickpeek.siblings(downloads / "a.af")] == ["new.svg", "folder", "a.af", "old1.svg"]
+
 # Conversions write next to the original and never overwrite
 out = quickpeek.convert_file(d / "img10.png", ".jpg")
 assert out == d / "img10.jpg" and QImage(str(out)).width() == 50
