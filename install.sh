@@ -61,7 +61,7 @@ install_packages() {
         *debian*|*ubuntu*)
             pkgs=(python3 python3-venv python3-pyside6.qtwidgets python3-pyside6.qtquick python3-pyside6.qtqml
                   python3-pyside6.qtmultimedia python3-pyside6.qtmultimediawidgets python3-pyside6.qtpdf
-                  python3-pyside6.qtpdfwidgets python3-pyside6.qtnetwork qml6-module-qtquick3d
+                  python3-pyside6.qtpdfwidgets python3-pyside6.qtnetwork python3-pyside6.qtdbus qml6-module-qtquick3d
                   qml6-module-qtquick3d-helpers qml6-module-qtquick3d-assetutils qml6-module-qtquick
                   qt6-wayland libglib2.0-bin)
             say "Installing with apt: ${pkgs[*]}"
@@ -82,7 +82,7 @@ import sys
 assert sys.version_info >= (3, 11)
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QApplication
-from PySide6 import QtMultimedia, QtMultimediaWidgets, QtPdf, QtPdfWidgets, QtNetwork, QtQuick
+from PySide6 import QtDBus, QtMultimedia, QtMultimediaWidgets, QtPdf, QtPdfWidgets, QtNetwork, QtQuick
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 app = QApplication([])
 engine = QQmlEngine()

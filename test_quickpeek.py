@@ -334,13 +334,14 @@ sizes = [(d / n).stat().st_size for n in order[1:]]
 assert sizes == sorted(sizes, reverse=True), order
 (d / ".directory").unlink()
 
-# The Downloads folder without its own settings: newest first, folders mixed in, like Dolphin
-downloads = Path(tempfile.mkdtemp())
-(Path(os.environ["XDG_CONFIG_HOME"]) / "user-dirs.dirs").write_text(f'XDG_DOWNLOAD_DIR="{downloads}"\n')
-for age, name in enumerate(["new.svg", "folder", "a.af", "old1.svg"]):
-    (downloads / name).mkdir() if name == "folder" else (downloads / name).write_text("")
-    os.utime(downloads / name, (1e9 - age, 1e9 - age))
-assert [p.name for p in quickpeek.siblings(downloads / "a.af")] == ["new.svg", "folder", "a.af", "old1.svg"]
+# Names compare like Dolphin's: name without extension first, then the extension
+collator = quickpeek.QCollator()
+collator.setNumericMode(True)
+names = ["file-2.txt", "v1.10", "file.txt", "a.tar.gz", "v1.2", "a.b"]
+assert sorted(names, key=lambda n: quickpeek.dolphin_name_key(n, collator)) == [
+    "a.b", "a.tar.gz", "file.txt", "file-2.txt", "v1.2", "v1.10"]
+# No Dolphin window shows the sample folder: sorting falls back to the saved settings
+assert quickpeek.dolphin_live_settings(d) is None
 
 # Conversions write next to the original and never overwrite
 out = quickpeek.convert_file(d / "img10.png", ".jpg")

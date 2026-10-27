@@ -39,6 +39,7 @@ from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
 import shiboken6
+from PySide6.QtDBus import QDBus, QDBusConnection, QDBusMessage, QDBusVariant
 from PySide6.QtCore import (QAbstractAnimation, QEasingCurve, QVariantAnimation, QFile, Q_ARG, Qt, QCollator, QDate, QEvent, QLibraryInfo, QLocale, QLineF, QMarginsF, QMimeData, QMetaObject, QMimeDatabase, QModelIndex, QObject,
                             QElapsedTimer, QPoint, QPropertyAnimation, QPointF, QProcess, QRect, QRectF, QSettings, QSize, QSizeF, QStandardPaths, QTimer, QUrl, Signal)
 from PySide6.QtGui import (QTextCursor, QColor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QImageReader, QImageWriter, QKeySequence,
@@ -747,8 +748,7 @@ def dolphin_view_settings(folder):
     dolphinrc = configparser.ConfigParser(interpolation=None, strict=False)
     dolphinrc.read(Path.home() / ".config/dolphinrc")
     texts = []
-    per_folder = dolphinrc.get("General", "GlobalViewProps", fallback="false") != "true"
-    if per_folder:
+    if dolphinrc.get("General", "GlobalViewProps", fallback="false") != "true":
         try:  # Dolphin 24+ stores per-folder view settings as an extended attribute on the folder
             texts.append(os.getxattr(folder, "user.kde.fm.viewproperties#1").decode())
         except OSError:
@@ -756,9 +756,6 @@ def dolphin_view_settings(folder):
         for file in (Path(folder) / ".directory", VIEW_PROPS / str(folder).lstrip("/") / ".directory"):
             if file.is_file():
                 texts.append(file.read_text(errors="replace"))
-    # Until its view is changed, Dolphin shows the Downloads folder newest first, folders mixed in
-    downloads_default = per_folder and not texts and (
-        Path(folder) == Path(QStandardPaths.writableLocation(QStandardPaths.DownloadLocation)))
     if (VIEW_PROPS / "global/.directory").is_file():
         texts.append((VIEW_PROPS / "global/.directory").read_text(errors="replace"))
     for text in texts:
@@ -775,14 +772,57 @@ def dolphin_view_settings(folder):
             settings["hidden_last"] = section.get("SortHiddenLast", "false") == "true"
             settings["show_hidden"] = section.get("HiddenFilesShown", "false") == "true"
             break
-    if downloads_default:
-        settings.update(role="modificationtime", descending=True, folders_first=False)
     return settings
+
+
+DOLPHIN_ROLES = ("text", "size", "modificationtime", "creationtime", "accesstime", "type", "comment", "rating", "tags")
+
+
+def dolphin_live_settings(folder):
+    """Sorting of the Dolphin window that shows `folder`, read from its View menu over D-Bus.
+    None when no Dolphin window shows it: saved settings miss defaults Dolphin decides on its own."""
+    bus = QDBusConnection.sessionBus()
+
+    def call(service, path, interface, method, *args):
+        message = QDBusMessage.createMethodCall(service, path, interface, method)
+        message.setArguments(list(args))
+        reply = bus.call(message, QDBus.Block, 300)  # a frozen Dolphin must not freeze us
+        if reply.type() != QDBusMessage.ReplyMessage or not reply.arguments():
+            return None
+        value = reply.arguments()[0]
+        return value.variant() if isinstance(value, QDBusVariant) else value  # Properties.Get wraps its answer
+
+    url = QUrl.fromLocalFile(str(folder)).toString()
+    for service in bus.interface().registeredServiceNames().value() or []:
+        if not service.startswith("org.kde.dolphin-"):
+            continue
+        tree = call(service, "/dolphin", "org.freedesktop.DBus.Introspectable", "Introspect") or ""
+        for window in re.findall(r'<node name="(Dolphin_\d+)"', tree):
+            path = f"/dolphin/{window}"
+            if not call(service, path, "org.kde.dolphin.MainWindow", "isUrlOpen", url):
+                continue
+
+            def checked(action):  # the menu follows the window's active view, where Space was pressed
+                return bool(call(service, f"{path}/actions/{action}", "org.freedesktop.DBus.Properties", "Get",
+                                 "org.qtproject.Qt.QAction", "checked"))
+
+            return {"role": next((r for r in DOLPHIN_ROLES if checked(f"sort_by_{r}")), "text"),
+                    "descending": checked("descending"), "folders_first": checked("folders_first"),
+                    "hidden_last": checked("hidden_last"), "show_hidden": checked("show_hidden_files")}
+    return None
+
+
+def dolphin_name_key(name, collator):
+    """Dolphin compares names without the extension first, then extensions. A dot between digits
+    ("v1.2") is not an extension."""
+    cut = next((i for i in range(len(name) - 1, 0, -1)
+                if name[i] == "." and not (name[i - 1].isdigit() and name[i + 1:i + 2].isdigit())), len(name))
+    return collator.sortKey(name[:cut]), collator.sortKey(name[cut:])
 
 
 def sorted_like_dolphin(folder, include=None):
     """Entries of `folder` in the order Dolphin shows them. `include` stays even if hidden."""
-    s = dolphin_view_settings(folder)
+    s = dolphin_live_settings(folder) or dolphin_view_settings(folder)
     items = [p for p in Path(folder).iterdir() if s["show_hidden"] or not p.name.startswith(".") or p == include]
     collator = QCollator()
     collator.setNumericMode(True)  # "img2" before "img10"
@@ -804,7 +844,7 @@ def sorted_like_dolphin(folder, include=None):
         "type": lambda p: collator.sortKey(mimes.mimeTypeForFile(str(p), QMimeDatabase.MatchExtension).comment()),
         "extension": lambda p: p.suffix.lower(),
     }.get(s["role"].lower(), lambda p: 0)
-    items.sort(key=lambda p: (role(p), collator.sortKey(p.name)), reverse=s["descending"])
+    items.sort(key=lambda p: (role(p), dolphin_name_key(p.name, collator)), reverse=s["descending"])
     # Grouping never flips with the sort direction; Python's sort is stable, so the order above survives
     items.sort(key=lambda p: (s["hidden_last"] and p.name.startswith("."), s["folders_first"] and not p.is_dir()))
     return items
