@@ -1,16 +1,26 @@
 <div align="center">
 
-# KDEQuickPeek
+<img src=".github/assets/banner.svg" width="100%" alt="QuickPeek: press Space in Dolphin, see inside any file" />
+
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![Python 3](https://img.shields.io/badge/python-3-3776AB?logo=python&logoColor=white)](quickpeek.py)
+[![Qt 6](https://img.shields.io/badge/Qt-6%20(PySide6)-41CD52?logo=qt&logoColor=white)](quickpeek.py)
 
 **Select a file in Dolphin, press Space, see what is inside.**
-
-![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
-![Python 3](https://img.shields.io/badge/python-3-3776AB)
-![Qt 6](https://img.shields.io/badge/Qt-6%20(PySide6)-41CD52)
+Previews for images, PDF, video, 3D models, code and more.
 
 </div>
 
 > **Hobby project.** I made this for fun, to learn. It has no goal beyond that. It comes with no support: issues are open but I cannot promise imminent fixes. It may break or change at any time.
+
+## Highlights
+
+| | |
+| --- | --- |
+| ⌨️ **One key** | Press Space in Dolphin to open, Space or Q to close. Arrow keys move through the folder in Dolphin's order. |
+| 🔎 **Read what is in it** | Search PDFs, find and copy text in pictures (OCR), pick a subject with AI. |
+| ✍️ **Annotate safely** | Draw, highlight and write on a PDF. The original never changes. |
+| 🧊 **Native Qt 6** | Light and dark follow your system theme. |
 
 ## What it previews
 
