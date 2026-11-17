@@ -258,3 +258,24 @@ bool save_png(rust::Str path, std::int32_t width, std::int32_t height, rust::Sli
     const QImage image(reinterpret_cast<const uchar *>(pixels.data()), width, height, width * 4, QImage::Format_ARGB32_Premultiplied);
     return image.save(q(path), "PNG");
 }
+
+#include <QBuffer>
+#include <QLibraryInfo>
+
+// Where Qt's tools live, like balsam
+rust::String qt_binaries_dir() { return r(QLibraryInfo::path(QLibraryInfo::BinariesPath)); }
+
+// RGBA rows stored bottom row first (Blender's thumbnails) as PNG bytes; empty if they don't fit the size
+rust::Vec<std::uint8_t> rgba_bottom_up_png(rust::Slice<const std::uint8_t> pixels, int width, int height)
+{
+    rust::Vec<std::uint8_t> out;
+    if (width <= 0 || height <= 0 || pixels.size() < std::size_t(width) * std::size_t(height) * 4)
+        return out;
+    const QImage image = QImage(pixels.data(), width, height, width * 4, QImage::Format_RGBA8888).flipped(Qt::Vertical);
+    QByteArray png;
+    QBuffer buffer(&png);
+    image.save(&buffer, "PNG");
+    for (char c : png)
+        out.push_back(std::uint8_t(c));
+    return out;
+}

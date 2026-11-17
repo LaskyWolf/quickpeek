@@ -122,6 +122,8 @@ fn kind_of(path: &Path) -> &'static str {
         "folder"
     } else if helpers::mime_inherits(&text, "application/pdf") {
         "pdf" // before images: Qt's PDF image plugin would read it as one
+    } else if crate::model::is_model(path) {
+        "model" // before text: .gltf and .obj are text files too
     } else if let Some(kind) = crate::media::kind(&text) {
         kind
     } else if path.extension().is_some_and(|e| ["ttf", "otf", "ttc", "otc", "woff", "woff2"].contains(&e.to_string_lossy().to_lowercase().as_str()))

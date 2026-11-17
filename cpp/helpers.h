@@ -33,3 +33,5 @@ rust::String local_time(std::int64_t secs);
 rust::String md5_hex(rust::Str text);
 Pixels render_pdf_page(rust::Str pdf, std::int32_t page, std::int32_t width);
 bool save_png(rust::Str path, std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels);
+rust::String qt_binaries_dir();
+rust::Vec<std::uint8_t> rgba_bottom_up_png(rust::Slice<const std::uint8_t> pixels, int width, int height);

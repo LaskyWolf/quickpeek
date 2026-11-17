@@ -10,6 +10,7 @@ mod files;
 mod helpers;
 mod media;
 mod office;
+mod model;
 mod sheet;
 mod socket;
 mod text;

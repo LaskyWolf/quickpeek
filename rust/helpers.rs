@@ -51,6 +51,8 @@ pub mod ffi {
         fn render_pdf_page(pdf: &str, page: i32, width: i32) -> Pixels;
         /// Saves premultiplied 0xAARRGGBB pixels as a PNG.
         fn save_png(path: &str, width: i32, height: i32, pixels: &[u32]) -> bool;
+        fn qt_binaries_dir() -> String;
+        fn rgba_bottom_up_png(pixels: &[u8], width: i32, height: i32) -> Vec<u8>;
     }
 
     /// A rendered page: 0xffRRGGBB pixels, row by row.

@@ -800,6 +800,7 @@ dependencies = [
  "roxmltree",
  "rusqlite",
  "ruzstd",
+ "serde_json",
  "syntect",
  "zip",
 ]

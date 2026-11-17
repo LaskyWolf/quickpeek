@@ -44,7 +44,7 @@ Previewers
 - [x] Spreadsheets (xlsx/ods/csv)
 - [x] Office pages via ONLYOFFICE x2t, Word view
 - [x] Slides with PowerPoint Morph
-- [ ] 3D models (balsam/assimp/Blender), fly mode
+- [x] 3D models (balsam/assimp/Blender), fly mode
 - [x] PostScript (ghostscript)
 
 Tools
