@@ -1,9 +1,10 @@
 # Personal package for KDEQuickPeek. Build and install from this folder: makepkg -si
 pkgname=quickpeek
-pkgver=r45.f9c96a4
+pkgver=r50.f8b6caa
 pkgrel=1
 pkgdesc="KDEQuickPeek: quick file previewer for KDE Plasma (Space to preview)"
-arch=(any)
+arch=(x86_64)
+makedepends=(cargo)
 license=(GPL-3.0-or-later)
 depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d glib2)
 optdepends=(
@@ -27,16 +28,22 @@ optdepends=(
   'plasma-workspace: set as wallpaper'
   'dolphin: show in folder'
 )
-source=(quickpeek.py quickpeek-desktop.py quickpeek.desktop quickpeek-app.desktop quickpeek.svg)
-sha256sums=(SKIP SKIP SKIP SKIP SKIP)
+source=(quickpeek-desktop.py quickpeek.desktop quickpeek-app.desktop quickpeek.svg)
+sha256sums=(SKIP SKIP SKIP SKIP)
 
 pkgver() {
   cd "$startdir"
   printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }
 
+build() {
+  cd "$startdir"
+  QUICKPEEK_PY=/usr/lib/quickpeek/quickpeek.py cargo build --release --locked --target-dir "$srcdir/target"
+}
+
 package() {
-  install -Dm755 quickpeek.py "$pkgdir/usr/bin/quickpeek"
+  install -Dm755 "$srcdir/target/release/quickpeek" "$pkgdir/usr/bin/quickpeek"
+  install -Dm644 "$startdir/quickpeek.py" "$pkgdir/usr/lib/quickpeek/quickpeek.py"
   install -Dm755 quickpeek-desktop.py "$pkgdir/usr/bin/quickpeek-desktop"
   install -Dm644 quickpeek.desktop "$pkgdir/usr/share/kio/servicemenus/quickpeek.desktop"
   install -Dm644 quickpeek-app.desktop "$pkgdir/usr/share/applications/quickpeek.desktop"

@@ -1,0 +1,13 @@
+[package]
+name = "quickpeek"
+version = "0.2.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[profile.release]
+lto = true
+strip = true
+
+[[bin]]
+name = "quickpeek"
+path = "rust/main.rs"
