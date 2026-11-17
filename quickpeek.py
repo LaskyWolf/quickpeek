@@ -42,7 +42,7 @@ import shiboken6
 from PySide6.QtDBus import QDBus, QDBusConnection, QDBusMessage, QDBusVariant
 from PySide6.QtCore import (QAbstractAnimation, QEasingCurve, QVariantAnimation, QFile, Q_ARG, Qt, QCollator, QDate, QEvent, QLibraryInfo, QLocale, QLineF, QMarginsF, QMimeData, QMetaObject, QMimeDatabase, QModelIndex, QObject,
                             QElapsedTimer, QPoint, QPropertyAnimation, QPointF, QProcess, QRect, QRectF, QSettings, QSize, QSizeF, QStandardPaths, QTimer, QUrl, Signal)
-from PySide6.QtGui import (QTextCursor, QColor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QImageReader, QImageWriter, QKeySequence,
+from PySide6.QtGui import (QColor, QDesktopServices, QDrag, QFont, QFontDatabase, QIcon, QImage, QImageReader, QImageWriter, QKeySequence,
                            QMovie, QPageSize, QPainter, QPainterPath, QPalette, QPen, QPdfWriter, QPixmap, QShortcut, QCursor, QFontMetrics, QTextDocument, QTransform, QLinearGradient)
 from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer
 try:
@@ -5842,9 +5842,33 @@ def ready_box():
     return box
 
 
+def refresh_style(app):
+    """Soft hover/checked/focus states and slim scrollbars, built from the system palette so light and dark both work."""
+    p = app.palette()
+    c = p.highlight().color()
+    tint = lambda a: f"rgba({c.red()},{c.green()},{c.blue()},{a})"
+    t = p.text().color()
+    handle = f"rgba({t.red()},{t.green()},{t.blue()},90)"
+    app.setStyleSheet(f"""
+        QToolButton {{ border: 1px solid transparent; border-radius: 6px; padding: 4px; }}
+        QToolButton:hover {{ background: {tint(40)}; }}
+        QToolButton:pressed, QToolButton:checked {{ background: {tint(80)}; }}
+        QToolButton:focus {{ border-color: {tint(200)}; }}
+        QToolButton:disabled {{ background: transparent; }}
+        QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+        QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; }}
+        QScrollBar::handle {{ background: {handle}; border-radius: 4px; min-height: 28px; min-width: 28px; margin: 1px; }}
+        QScrollBar::handle:hover {{ background: {tint(170)}; }}
+        QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+        QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+        QToolTip {{ border: 1px solid {tint(120)}; border-radius: 4px; padding: 3px 6px; }}
+    """)
+
+
 def main():
     move_old_files()  # ponytail: drop once no install still has the old folders
     app = QApplication(sys.argv)
+    refresh_style(app)
     if sys.argv[1:] == ["--quit"]:  # stop the hidden background quickpeek, e.g. after updating quickpeek
         print("stopped" if send_to_running("--quit") else "quickpeek is not running")
         return 0
