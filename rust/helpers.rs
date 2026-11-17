@@ -43,6 +43,9 @@ pub mod ffi {
         include!("cxx-qt-lib/qqmlapplicationengine.h");
         type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
         fn block_network(engine: Pin<&mut QQmlApplicationEngine>);
+        fn thumbnail_key(path: &str) -> String;
+        fn mime_icon_for_name(name: &str) -> String;
+        fn local_time(secs: i64) -> String;
     }
 }
 

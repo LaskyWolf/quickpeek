@@ -36,7 +36,7 @@ Previewers
 - [ ] Images: Krita/ORA/XCF/PSD/Clip, thumbnails of other files, AI tools toolbar
 - [x] Plain text
 - [x] Code highlighting, Markdown/HTML, search popup (Ctrl+F)
-- [ ] Folders, archives (libarchive, 7z)
+- [x] Folders, archives (libarchive, 7z)
 - [x] Fonts
 - [x] Audio with waveform, video with seek and speed
 - [x] PDF reading, search, text selection

@@ -3,6 +3,7 @@
 //! from the `quickpeek` launcher. A separate program, so the launcher never loads Qt.
 
 mod app;
+mod browse;
 mod files;
 mod helpers;
 mod media;
@@ -11,14 +12,15 @@ mod socket;
 mod text;
 
 use cxx_qt_lib::{QQmlApplicationEngine, QUrl};
-use std::process::ExitCode;
 
-fn main() -> ExitCode {
+fn main() {
     helpers::create_app(std::env::args().collect());
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {
         helpers::block_network(engine.as_mut());
         engine.load(&QUrl::from("qrc:/qt/qml/com/quickpeek/qml/Main.qml"));
     }
-    ExitCode::from(helpers::exec_app() as u8)
+    // Exit without tearing the QML scene down: worker threads may still be finishing,
+    // and the window only quits on `quickpeek --quit`, when nothing is left to save
+    std::process::exit(helpers::exec_app());
 }

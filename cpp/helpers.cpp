@@ -201,3 +201,23 @@ void block_network(QQmlApplicationEngine &engine)
     static LocalOnlyFactory factory;
     engine.setNetworkAccessManagerFactory(&factory);
 }
+
+#include <QCryptographicHash>
+
+// Name of a file's thumbnail in ~/.cache/thumbnails (freedesktop spec: md5 of the file URI)
+rust::String thumbnail_key(rust::Str path)
+{
+    const QByteArray uri = QUrl::fromLocalFile(q(path)).toEncoded();
+    return r(QString::fromLatin1(QCryptographicHash::hash(uri, QCryptographicHash::Md5).toHex() + ".png"));
+}
+
+// By extension only: archive entries aren't on disk, so their content can't be sniffed
+rust::String mime_icon_for_name(rust::Str name)
+{
+    return r(QMimeDatabase().mimeTypeForFile(q(name), QMimeDatabase::MatchExtension).iconName());
+}
+
+rust::String local_time(std::int64_t secs)
+{
+    return r(QDateTime::fromSecsSinceEpoch(secs).toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+}
