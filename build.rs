@@ -1,7 +1,7 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 fn main() {
-    CxxQtBuilder::new_qml_module(QmlModule::new("com.quickpeek").qml_files(["qml/Main.qml", "qml/ImageView.qml"]))
+    CxxQtBuilder::new_qml_module(QmlModule::new("com.quickpeek").qml_files(["qml/Main.qml", "qml/ImageView.qml", "qml/PdfView.qml"]))
         .qt_module("Widgets")
         .qt_module("DBus")
         .qt_module("QuickControls2")

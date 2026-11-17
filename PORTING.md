@@ -39,7 +39,7 @@ Previewers
 - [ ] Folders, archives (libarchive, 7z)
 - [ ] Fonts
 - [ ] Audio with waveform, video with seek and speed
-- [ ] PDF reading, search, text selection
+- [x] PDF reading, search, text selection
 - [ ] Spreadsheets (xlsx/ods/csv)
 - [ ] Office pages via ONLYOFFICE x2t, Word view
 - [ ] Slides with PowerPoint Morph
