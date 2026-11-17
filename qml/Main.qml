@@ -191,7 +191,7 @@ ApplicationWindow {
         background: null
     }
 
-    Component { id: imageView; ImageView { source: peek.source } }
+    Component { id: imageView; ImageView { source: peek.picture } }
     Component { id: sheetView; SheetView { path: peek.path } }
     Component { id: folderView; FolderView { path: peek.path; onOpened: path => peek.open(path) } }
     Component { id: archiveView; ArchiveView { path: peek.path } }

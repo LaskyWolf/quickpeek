@@ -106,12 +106,16 @@ fn folder_summary(folder: &Path, deadline: Duration) -> (u64, u64, u64, bool) {
     (files, folders, size, true)
 }
 
-fn thumbnail(path: &Path) -> Option<PathBuf> {
-    let cache = std::env::var_os("XDG_CACHE_HOME")
+pub fn cache_home() -> PathBuf {
+    std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache"));
+        .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache"))
+}
+
+pub fn thumbnail(path: &Path, sizes: &[&str]) -> Option<PathBuf> {
+    let cache = cache_home();
     let key = helpers::thumbnail_key(&path.to_string_lossy());
-    ["large", "normal"].iter().map(|size| cache.join("thumbnails").join(size).join(&key)).find(|t| t.exists())
+    sizes.iter().map(|size| cache.join("thumbnails").join(size).join(&key)).find(|t| t.exists())
 }
 
 impl qobject::Folder {
@@ -129,7 +133,7 @@ impl qobject::Folder {
                 let text = child.to_string_lossy();
                 let mime = helpers::mime_info(&text);
                 let icon = if mime.icon.is_empty() { mime.generic_icon } else { mime.icon };
-                let thumb = thumbnail(child).map_or(String::new(), |t| format!("file://{}", t.display()));
+                let thumb = thumbnail(child, &["large", "normal"]).map_or(String::new(), |t| format!("file://{}", t.display()));
                 let name = child.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
                 format!(r#"{{"n":{},"p":{},"i":{},"t":{}}}"#, json_str(&name), json_str(&text), json_str(&icon), json_str(&thumb))
             })

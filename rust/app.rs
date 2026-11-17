@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The window's backend: which file is shown, the files around it, and the socket other launches write to.
 
-use crate::{files, helpers};
+use crate::{embedded, files, helpers};
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QUrl};
@@ -23,6 +23,8 @@ pub mod qobject {
         #[qml_element]
         #[qproperty(QString, path)]
         #[qproperty(QUrl, source)]
+        /// What ImageView shows: the file itself, or a preview taken from it
+        #[qproperty(QUrl, picture)]
         #[qproperty(QString, details)]
         #[qproperty(QString, kind)]
         #[qproperty(QString, icon)]
@@ -88,6 +90,7 @@ const TEXT_LIMIT: u64 = 1_000_000; // bytes shown for text files, so a 2 GB log 
 pub struct PeekRust {
     path: QString,
     source: QUrl,
+    picture: QUrl,
     details: QString,
     kind: QString,
     icon: QString,
@@ -127,7 +130,7 @@ fn kind_of(path: &Path) -> &'static str {
         "font" // by suffix too: .otf/.otc are also OpenDocument template globs
     } else if is_sheet(path) {
         "sheet"
-    } else if helpers::can_read_image(&text) {
+    } else if embedded::has_preview(path) || helpers::can_read_image(&text) {
         "image"
     } else if helpers::mime_inherits(&text, "text/markdown") {
         "markdown"
@@ -137,9 +140,16 @@ fn kind_of(path: &Path) -> &'static str {
         "archive"
     } else if helpers::mime_inherits(&text, "text/plain") {
         "text"
+    } else if embedded::thumbnail(path).is_some() {
+        "image"
     } else {
         "other"
     }
+}
+
+/// An image Qt decodes itself; other "image" files show a preview taken from them.
+fn direct_image(path: &Path) -> bool {
+    !embedded::has_preview(path) && helpers::can_read_image(&path.to_string_lossy())
 }
 
 fn is_sheet(path: &Path) -> bool {
@@ -222,7 +232,7 @@ impl qobject::Peek {
         let (index, count) = (self.rust().index, files.len());
         let neighbour = |delta: usize| {
             let p = &files[(index + delta) % count];
-            if count > 1 && kind_of(p) == "image" { url(p) } else { QUrl::default() }
+            if count > 1 && kind_of(p) == "image" && direct_image(p) { url(p) } else { QUrl::default() }
         };
         let (previous, next) = (neighbour(count - 1), neighbour(1));
         let text = path.to_string_lossy();
@@ -239,6 +249,11 @@ impl qobject::Peek {
         // The view switches on `kind`, so the content it reads is set first
         self.as_mut().set_text(QString::from(if matches!(kind, "text" | "markdown" | "html") { read_text(&path) } else { String::new() }.as_str()));
         self.as_mut().set_source(url(&path));
+        let direct = kind == "image" && direct_image(&path);
+        self.as_mut().set_picture(if direct { url(&path) } else { QUrl::default() });
+        if kind == "image" && !direct {
+            self.as_mut().load_picture(path.clone());
+        }
         self.as_mut().set_path(QString::from(text.as_ref()));
         self.as_mut().set_details(QString::from(details.as_str()));
         self.as_mut().set_icon(QString::from(icon.as_str()));
@@ -246,6 +261,23 @@ impl qobject::Peek {
         self.as_mut().set_previous(previous);
         self.as_mut().set_next(next);
         self.as_mut().set_kind(QString::from(kind));
+    }
+
+    /// Extracts the preview on a worker thread: a .clip or .af can be hundreds of MB.
+    fn load_picture(self: Pin<&mut Self>, path: PathBuf) {
+        let thread = self.qt_thread();
+        std::thread::spawn(move || {
+            let picture = embedded::picture(&path);
+            let _ = thread.queue(move |mut peek| {
+                if peek.path().to_string() != path.to_string_lossy() || peek.kind().to_string() != "image" {
+                    return; // the window moved on to another file meanwhile
+                }
+                match picture {
+                    Some(p) => peek.as_mut().set_picture(url(&p)),
+                    None => peek.as_mut().set_kind(QString::from("other")), // damaged or no preview inside
+                }
+            });
+        });
     }
 
     fn activate(self: Pin<&mut Self>, token: &QString) {
@@ -258,6 +290,7 @@ impl qobject::Peek {
     fn clear(mut self: Pin<&mut Self>) {
         self.as_mut().set_kind(QString::from(""));
         self.as_mut().set_source(QUrl::default());
+        self.as_mut().set_picture(QUrl::default());
         self.as_mut().set_text(QString::default());
         self.as_mut().set_previous(QUrl::default());
         self.as_mut().set_next(QUrl::default());

@@ -33,7 +33,8 @@ Shell
 
 Previewers
 - [x] Images: zoom/pan, animated GIF/WebP, SVG, preload neighbours
-- [ ] Images: Krita/ORA/XCF/PSD/Clip, thumbnails of other files, AI tools toolbar
+- [x] Images: Krita/ORA/XCF/PSD/Clip, Blender/Revit/Affinity previews, thumbnails of other files
+- [ ] Images: AI tools toolbar
 - [x] Plain text
 - [x] Code highlighting, Markdown/HTML, search popup (Ctrl+F)
 - [x] Folders, archives (libarchive, 7z)
@@ -44,7 +45,7 @@ Previewers
 - [ ] Office pages via ONLYOFFICE x2t, Word view
 - [ ] Slides with PowerPoint Morph
 - [ ] 3D models (balsam/assimp/Blender), fly mode
-- [ ] PostScript (ghostscript)
+- [x] PostScript (ghostscript)
 
 Tools
 - [ ] PDF editor: pressure pen, text boxes, arrows, signing, save annotations

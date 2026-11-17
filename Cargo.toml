@@ -17,7 +17,15 @@ csv = "1.4.0"
 cxx = "1.0.205"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_full"] }
+flate2 = "1"
+md5 = "0.7"
+memchr = "2"
+memmap2 = "0.9"
+png = "0.18"
+rusqlite = { version = "0.40", features = ["bundled", "serialize"] }
+ruzstd = "0.9.1"
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 cxx-qt-build = "0.10"
