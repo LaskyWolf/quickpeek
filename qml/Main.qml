@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+import org.kde.kirigami as Kirigami
 import com.quickpeek
 
 ApplicationWindow {
@@ -98,7 +99,7 @@ ApplicationWindow {
 
             Loader {
                 anchors.fill: parent
-                sourceComponent: ({ image: imageView, text: textView, font: fontView, other: iconView })[peek.kind] ?? null
+                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, other: iconView })[peek.kind] ?? null
             }
 
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
@@ -170,12 +171,11 @@ ApplicationWindow {
                 radius: 20
                 color: Qt.alpha(palette.window, 0.88)
                 border.color: Qt.alpha(palette.mid, 0.47)
-                ToolButton {
+                Kirigami.Icon {
                     anchors.centerIn: parent
-                    icon.name: iconName
-                    enabled: false
-                    flat: true
-                    background: null
+                    width: 20
+                    height: 20
+                    source: iconName
                 }
             }
         }
@@ -185,6 +185,7 @@ ApplicationWindow {
     Component { id: imageView; ImageView { source: peek.source } }
 
     Component { id: fontView; FontView { source: peek.source; icon: peek.icon } }
+    Component { id: mediaView; MediaView { source: peek.source; audio: peek.kind === "audio"; icon: peek.icon } }
 
     Component {
         id: textView
@@ -202,13 +203,13 @@ ApplicationWindow {
 
     Component {
         id: iconView
-        ToolButton {
-            icon.name: peek.icon
-            icon.width: 128
-            icon.height: 128
-            enabled: false
-            flat: true
-            background: null
+        Item {
+            Kirigami.Icon {
+                anchors.centerIn: parent
+                width: 128
+                height: 128
+                source: peek.icon
+            }
         }
     }
 

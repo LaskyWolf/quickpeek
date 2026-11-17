@@ -7,7 +7,7 @@ arch=(x86_64)
 makedepends=(cargo)
 options=(!lto)  # GCC LTO objects from the C++ helpers are unreadable for the Rust linker; Cargo.toml does LTO
 license=(GPL-3.0-or-later)
-depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d qqc2-desktop-style glib2)
+depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d qqc2-desktop-style kirigami glib2)
 optdepends=(
   'python-pymupdf: PDF editor'
   'python-numpy: subject picking and finding text in images'

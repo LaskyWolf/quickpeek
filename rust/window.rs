@@ -5,6 +5,7 @@
 mod app;
 mod files;
 mod helpers;
+mod media;
 mod socket;
 
 use cxx_qt_lib::{QQmlApplicationEngine, QUrl};
