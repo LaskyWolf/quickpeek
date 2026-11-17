@@ -99,7 +99,7 @@ ApplicationWindow {
 
             Loader {
                 anchors.fill: parent
-                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, other: iconView })[peek.kind] ?? null
+                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, sheet: sheetView, other: iconView })[peek.kind] ?? null
             }
 
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
@@ -183,6 +183,7 @@ ApplicationWindow {
     }
 
     Component { id: imageView; ImageView { source: peek.source } }
+    Component { id: sheetView; SheetView { path: peek.path } }
 
     Component { id: fontView; FontView { source: peek.source; icon: peek.icon } }
     Component { id: mediaView; MediaView { source: peek.source; audio: peek.kind === "audio"; icon: peek.icon } }

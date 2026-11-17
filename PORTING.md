@@ -40,7 +40,7 @@ Previewers
 - [x] Fonts
 - [x] Audio with waveform, video with seek and speed
 - [ ] PDF reading, search, text selection
-- [ ] Spreadsheets (xlsx/ods/csv)
+- [x] Spreadsheets (xlsx/ods/csv)
 - [ ] Office pages via ONLYOFFICE x2t, Word view
 - [ ] Slides with PowerPoint Morph
 - [ ] 3D models (balsam/assimp/Blender), fly mode

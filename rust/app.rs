@@ -114,6 +114,8 @@ fn kind_of(path: &Path) -> &'static str {
         || helpers::mime_info(&text).name.starts_with("font/")
     {
         "font" // by suffix too: .otf/.otc are also OpenDocument template globs
+    } else if is_sheet(path) {
+        "sheet"
     } else if helpers::can_read_image(&text) {
         "image"
     } else if helpers::mime_inherits(&text, "text/plain") {
@@ -121,6 +123,11 @@ fn kind_of(path: &Path) -> &'static str {
     } else {
         "other"
     }
+}
+
+fn is_sheet(path: &Path) -> bool {
+    let ext = path.extension().map_or(String::new(), |e| e.to_string_lossy().to_lowercase());
+    ["xlsx", "xlsm", "xlsb", "xls", "ods", "csv", "tsv"].contains(&ext.as_str())
 }
 
 fn read_text(path: &Path) -> String {
