@@ -108,7 +108,7 @@ ApplicationWindow {
             Loader {
                 id: preview
                 anchors.fill: parent
-                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, sheet: sheetView, pdf: pdfView, folder: folderView, archive: archiveView, markdown: markdownView, html: htmlView, other: iconView })[peek.kind] ?? null
+                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, sheet: sheetView, pdf: pdfView, folder: folderView, archive: archiveView, model: modelView, markdown: markdownView, html: htmlView, other: iconView })[peek.kind] ?? null
             }
 
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
@@ -166,7 +166,7 @@ ApplicationWindow {
         anchors.verticalCenter: parent.verticalCenter
         width: 56
         height: 112 // a generous target, while the drawn circle stays small
-        visible: peek.count > 1
+        visible: peek.count > 1 && !preview.item?.flying // a 3D view's mouse steers the flight
         focusPolicy: Qt.NoFocus
         opacity: hovered ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -195,6 +195,7 @@ ApplicationWindow {
     Component { id: sheetView; SheetView { path: peek.path } }
     Component { id: folderView; FolderView { path: peek.path; onOpened: path => peek.open(path) } }
     Component { id: archiveView; ArchiveView { path: peek.path } }
+    Component { id: modelView; ModelView { path: peek.path } }
 
     Component { id: fontView; FontView { source: peek.source; icon: peek.icon } }
     Component { id: mediaView; MediaView { source: peek.source; audio: peek.kind === "audio"; icon: peek.icon } }

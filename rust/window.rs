@@ -7,6 +7,7 @@ mod browse;
 mod files;
 mod helpers;
 mod media;
+mod model;
 mod sheet;
 mod socket;
 mod text;

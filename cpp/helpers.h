@@ -29,3 +29,6 @@ void block_network(QQmlApplicationEngine &engine);
 rust::String thumbnail_key(rust::Str path);
 rust::String mime_icon_for_name(rust::Str name);
 rust::String local_time(std::int64_t secs);
+rust::String md5_hex(rust::Str text);
+rust::String qt_binaries_dir();
+rust::Vec<std::uint8_t> rgba_bottom_up_png(rust::Slice<const std::uint8_t> pixels, int width, int height);

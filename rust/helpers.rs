@@ -46,6 +46,9 @@ pub mod ffi {
         fn thumbnail_key(path: &str) -> String;
         fn mime_icon_for_name(name: &str) -> String;
         fn local_time(secs: i64) -> String;
+        fn md5_hex(text: &str) -> String;
+        fn qt_binaries_dir() -> String;
+        fn rgba_bottom_up_png(pixels: &[u8], width: i32, height: i32) -> Vec<u8>;
     }
 }
 
