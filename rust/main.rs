@@ -3,8 +3,9 @@
 //! running, without loading Qt, so Space in Dolphin answers in a few milliseconds.
 //! When no window runs yet, it starts the full app.
 
+mod socket;
+
 use std::io::Write;
-use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -15,12 +16,6 @@ const PYTHON_APP: &str = match option_env!("QUICKPEEK_PY") {
     Some(path) => path,
     None => "/usr/lib/quickpeek/quickpeek.py",
 };
-
-/// Same place QLocalServer uses for the name `quickpeek-<uid>`: the temp folder.
-fn socket_path() -> PathBuf {
-    let uid = std::fs::metadata("/proc/self").map(|m| m.uid()).unwrap_or(0);
-    std::env::temp_dir().join(format!("quickpeek-{uid}"))
-}
 
 /// A plain path or a file:// URL as a local path. None for other URLs (like desktop:/).
 fn local_path(arg: &str) -> Option<PathBuf> {
@@ -53,7 +48,7 @@ fn percent_decode(text: &str) -> String {
 
 /// Hand a message to the running window, in the format it reads: activation token, newline, message.
 fn send_to_running(message: &str) -> bool {
-    let Ok(mut socket) = UnixStream::connect(socket_path()) else {
+    let Ok(mut socket) = UnixStream::connect(socket::path()) else {
         return false;
     };
     let token = std::env::var("XDG_ACTIVATION_TOKEN").unwrap_or_default();
@@ -78,7 +73,12 @@ fn main() -> ExitCode {
         }
     }
     // No window yet, or an argument only the full app understands: start the full app.
-    let error = Command::new("python3").arg(PYTHON_APP).args(&args).exec();
+    let error = if std::env::var_os("QUICKPEEK_NEXT").is_some() {
+        let window = std::env::current_exe().map(|exe| exe.with_file_name("quickpeek-window"));
+        Command::new(window.unwrap_or_default()).args(&args).exec()
+    } else {
+        Command::new("python3").arg(PYTHON_APP).args(&args).exec()
+    };
     eprintln!("quickpeek: cannot start {PYTHON_APP}: {error}");
     ExitCode::FAILURE
 }

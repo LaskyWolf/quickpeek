@@ -4,10 +4,21 @@ version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[workspace]
+members = ["launcher"]
+
 [profile.release]
 lto = true
 strip = true
 
+[dependencies]
+cxx = "1.0.205"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["qt_full"] }
+
+[build-dependencies]
+cxx-qt-build = "0.10"
+
 [[bin]]
-name = "quickpeek"
-path = "rust/main.rs"
+name = "quickpeek-window"
+path = "rust/window.rs"

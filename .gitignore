@@ -4,3 +4,4 @@
 __pycache__/
 samples/
 /target
+.qmlls.ini

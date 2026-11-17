@@ -1,12 +1,13 @@
 # Personal package for KDEQuickPeek. Build and install from this folder: makepkg -si
 pkgname=quickpeek
-pkgver=r51.2179604
+pkgver=r53.282f89f
 pkgrel=1
 pkgdesc="KDEQuickPeek: quick file previewer for KDE Plasma (Space to preview)"
 arch=(x86_64)
 makedepends=(cargo)
+options=(!lto)  # GCC LTO objects from the C++ helpers are unreadable for the Rust linker; Cargo.toml does LTO
 license=(GPL-3.0-or-later)
-depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d glib2)
+depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d qqc2-desktop-style glib2)
 optdepends=(
   'python-pymupdf: PDF editor'
   'python-numpy: subject picking and finding text in images'
@@ -38,11 +39,12 @@ pkgver() {
 
 build() {
   cd "$startdir"
-  QUICKPEEK_PY=/usr/lib/quickpeek/quickpeek.py cargo build --release --locked --target-dir "$srcdir/target"
+  QUICKPEEK_PY=/usr/lib/quickpeek/quickpeek.py cargo build --release --locked --workspace --target-dir "$srcdir/target"
 }
 
 package() {
   install -Dm755 "$srcdir/target/release/quickpeek" "$pkgdir/usr/bin/quickpeek"
+  install -Dm755 "$srcdir/target/release/quickpeek-window" "$pkgdir/usr/bin/quickpeek-window"
   install -Dm644 "$startdir/quickpeek.py" "$pkgdir/usr/lib/quickpeek/quickpeek.py"
   install -Dm755 quickpeek-desktop.py "$pkgdir/usr/bin/quickpeek-desktop"
   install -Dm644 quickpeek.desktop "$pkgdir/usr/share/kio/servicemenus/quickpeek.desktop"
