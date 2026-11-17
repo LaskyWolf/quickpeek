@@ -108,6 +108,8 @@ fn kind_of(path: &Path) -> &'static str {
     let text = path.to_string_lossy();
     if path.is_dir() {
         "other" // ponytail: folder view not ported yet
+    } else if helpers::mime_inherits(&text, "application/pdf") {
+        "pdf" // before images: Qt's PDF image plugin would read it as one
     } else if let Some(kind) = crate::media::kind(&text) {
         kind
     } else if path.extension().is_some_and(|e| ["ttf", "otf", "ttc", "otc", "woff", "woff2"].contains(&e.to_string_lossy().to_lowercase().as_str()))
