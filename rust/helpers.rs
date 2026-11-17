@@ -35,6 +35,9 @@ pub mod ffi {
         fn copy_text(text: &str);
         fn copy_file(path: &str, with_image: bool);
         fn move_to_trash(path: &str) -> bool;
+        fn thumbnail_key(path: &str) -> String;
+        fn mime_icon_for_name(name: &str) -> String;
+        fn local_time(secs: i64) -> String;
     }
 }
 

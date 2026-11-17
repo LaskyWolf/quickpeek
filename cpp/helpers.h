@@ -20,3 +20,6 @@ rust::String formatted_size(std::uint64_t bytes);
 void copy_text(rust::Str text);
 void copy_file(rust::Str path, bool with_image);
 bool move_to_trash(rust::Str path);
+rust::String thumbnail_key(rust::Str path);
+rust::String mime_icon_for_name(rust::Str name);
+rust::String local_time(std::int64_t secs);

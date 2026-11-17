@@ -3,6 +3,7 @@
 //! from the `quickpeek` launcher. A separate program, so the launcher never loads Qt.
 
 mod app;
+mod browse;
 mod files;
 mod helpers;
 mod socket;

@@ -99,6 +99,15 @@ pub struct PeekRust {
     index: usize,
 }
 
+const ARCHIVES: &[&str] = &[
+    "application/zip", "application/x-tar", "application/x-compressed-tar", "application/x-bzip2-compressed-tar",
+    "application/x-bzip-compressed-tar", "application/x-xz-compressed-tar", "application/x-zstd-compressed-tar",
+    "application/x-lzma-compressed-tar", "application/x-7z-compressed", "application/vnd.rar", "application/x-rar",
+    "application/x-iso9660-image", "application/x-cd-image", "application/java-archive",
+    "application/vnd.android.package-archive", "application/x-cpio", "application/gzip", "application/x-xz",
+    "application/x-bzip2", "application/zstd",
+];
+
 fn escape(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
@@ -107,9 +116,11 @@ fn escape(text: &str) -> String {
 fn kind_of(path: &Path) -> &'static str {
     let text = path.to_string_lossy();
     if path.is_dir() {
-        "other" // ponytail: folder view not ported yet
+        "folder"
     } else if helpers::can_read_image(&text) {
         "image"
+    } else if ARCHIVES.contains(&helpers::mime_info(&text).name.as_str()) {
+        "archive"
     } else if helpers::mime_inherits(&text, "text/plain") {
         "text"
     } else {
