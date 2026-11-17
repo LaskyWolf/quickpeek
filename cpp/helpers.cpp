@@ -221,3 +221,40 @@ rust::String local_time(std::int64_t secs)
 {
     return r(QDateTime::fromSecsSinceEpoch(secs).toString(QStringLiteral("yyyy-MM-dd HH:mm")));
 }
+
+rust::String md5_hex(rust::Str text)
+{
+    return r(QString::fromLatin1(QCryptographicHash::hash(q(text).toUtf8(), QCryptographicHash::Md5).toHex()));
+}
+
+#include <QPainter>
+#include <QPdfDocument>
+
+Pixels render_pdf_page(rust::Str pdf, std::int32_t page, std::int32_t width)
+{
+    QPdfDocument doc; // its own document: QtPdf locks pdfium, so a worker thread may render
+    doc.load(q(pdf));
+    const QSizeF points = doc.pagePointSize(page);
+    if (points.isEmpty())
+        return Pixels{0, 0, {}};
+    const QSize size(width, qRound(width * points.height() / points.width()));
+    QImage image(size, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    QPainter(&image).drawImage(0, 0, doc.render(page, size));
+    Pixels pixels{size.width(), size.height(), {}};
+    pixels.data.reserve(size_t(size.width()) * size.height());
+    for (int y = 0; y < size.height(); ++y) {
+        const auto *line = reinterpret_cast<const std::uint32_t *>(image.constScanLine(y));
+        for (int x = 0; x < size.width(); ++x)
+            pixels.data.push_back(line[x]);
+    }
+    return pixels;
+}
+
+bool save_png(rust::Str path, std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels)
+{
+    if (pixels.size() != size_t(width) * height)
+        return false;
+    const QImage image(reinterpret_cast<const uchar *>(pixels.data()), width, height, width * 4, QImage::Format_ARGB32_Premultiplied);
+    return image.save(q(path), "PNG");
+}

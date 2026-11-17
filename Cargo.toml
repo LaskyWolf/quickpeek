@@ -17,7 +17,9 @@ csv = "1.4.0"
 cxx = "1.0.205"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_full"] }
+roxmltree = "0.20"
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [build-dependencies]
 cxx-qt-build = "0.10"

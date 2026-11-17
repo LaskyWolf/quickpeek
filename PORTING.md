@@ -41,8 +41,8 @@ Previewers
 - [x] Audio with waveform, video with seek and speed
 - [x] PDF reading, search, text selection
 - [x] Spreadsheets (xlsx/ods/csv)
-- [ ] Office pages via ONLYOFFICE x2t, Word view
-- [ ] Slides with PowerPoint Morph
+- [x] Office pages via ONLYOFFICE x2t, Word view
+- [x] Slides with PowerPoint Morph
 - [ ] 3D models (balsam/assimp/Blender), fly mode
 - [ ] PostScript (ghostscript)
 
