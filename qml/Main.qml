@@ -98,7 +98,7 @@ ApplicationWindow {
 
             Loader {
                 anchors.fill: parent
-                sourceComponent: ({ image: imageView, text: textView, other: iconView })[peek.kind] ?? null
+                sourceComponent: ({ image: imageView, text: textView, font: fontView, other: iconView })[peek.kind] ?? null
             }
 
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
@@ -183,6 +183,8 @@ ApplicationWindow {
     }
 
     Component { id: imageView; ImageView { source: peek.source } }
+
+    Component { id: fontView; FontView { source: peek.source; icon: peek.icon } }
 
     Component {
         id: textView

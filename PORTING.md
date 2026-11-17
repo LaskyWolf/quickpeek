@@ -37,7 +37,7 @@ Previewers
 - [x] Plain text
 - [ ] Code highlighting, Markdown/HTML, search popup (Ctrl+F)
 - [ ] Folders, archives (libarchive, 7z)
-- [ ] Fonts
+- [x] Fonts
 - [ ] Audio with waveform, video with seek and speed
 - [ ] PDF reading, search, text selection
 - [ ] Spreadsheets (xlsx/ods/csv)
