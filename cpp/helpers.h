@@ -20,3 +20,7 @@ rust::String formatted_size(std::uint64_t bytes);
 void copy_text(rust::Str text);
 void copy_file(rust::Str path, bool with_image);
 bool move_to_trash(rust::Str path);
+rust::String locale_number(double value);
+rust::String locale_decimal_point();
+rust::String locale_group_separator();
+rust::String locale_datetime(rust::Str iso);

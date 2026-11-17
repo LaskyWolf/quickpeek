@@ -12,6 +12,8 @@ lto = true
 strip = true
 
 [dependencies]
+calamine = { version = "0.38.0", features = ["dates"] }
+csv = "1.4.0"
 cxx = "1.0.205"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_full"] }

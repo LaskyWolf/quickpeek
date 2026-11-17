@@ -149,3 +149,22 @@ void copy_file(rust::Str path, bool with_image)
 }
 
 bool move_to_trash(rust::Str path) { return QFile::moveToTrash(q(path)); }
+
+#include <QDateTime>
+
+// Spreadsheet cells, in the system locale. QLocale is reentrant: these run on the sheet's worker thread.
+rust::String locale_number(double value) { return r(QLocale().toString(value, 'g', 10)); }
+rust::String locale_decimal_point() { return r(QLocale().decimalPoint()); }
+rust::String locale_group_separator() { return r(QLocale().groupSeparator()); }
+
+// "2024-01-31" or "2024-01-31T10:00:00" in the locale's short format; anything else as it is
+rust::String locale_datetime(rust::Str iso)
+{
+    const QString text = q(iso);
+    if (!text.contains(u'T')) {
+        const QDate date = QDate::fromString(text, Qt::ISODate);
+        return r(date.isValid() ? QLocale().toString(date, QLocale::ShortFormat) : text);
+    }
+    const QDateTime time = QDateTime::fromString(text, Qt::ISODate);
+    return r(time.isValid() ? QLocale().toString(time, QLocale::ShortFormat) : text);
+}

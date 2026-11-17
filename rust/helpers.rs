@@ -35,6 +35,10 @@ pub mod ffi {
         fn copy_text(text: &str);
         fn copy_file(path: &str, with_image: bool);
         fn move_to_trash(path: &str) -> bool;
+        fn locale_number(value: f64) -> String;
+        fn locale_decimal_point() -> String;
+        fn locale_group_separator() -> String;
+        fn locale_datetime(iso: &str) -> String;
     }
 }
 
