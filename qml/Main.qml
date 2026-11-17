@@ -68,8 +68,11 @@ ApplicationWindow {
     Shortcut { sequences: ["Space", "Q"]; onActivated: win.close() }
     Shortcut { sequence: "Escape"; onActivated: win.visibility === Window.FullScreen ? win.showNormal() : win.close() }
     Shortcut { sequence: "Return"; onActivated: { peek.openExternal(); win.close() } }
-    Shortcut { sequences: ["Left", "Up"]; onActivated: peek.step(-1) }
-    Shortcut { sequences: ["Right", "Down"]; onActivated: peek.step(1) }
+    Shortcut { sequence: "Left"; onActivated: peek.step(-1) }
+    Shortcut { sequence: "Right"; onActivated: peek.step(1) }
+    // ↑ / ↓ go to files too, unless the view claims them (slides): stepVertical(delta) returns true
+    Shortcut { sequence: "Up"; onActivated: preview.item?.stepVertical?.(-1) || peek.step(-1) }
+    Shortcut { sequence: "Down"; onActivated: preview.item?.stepVertical?.(1) || peek.step(1) }
     Shortcut {
         sequences: [StandardKey.Copy]
         onActivated: {
@@ -108,7 +111,7 @@ ApplicationWindow {
             Loader {
                 id: preview
                 anchors.fill: parent
-                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, sheet: sheetView, pdf: pdfView, folder: folderView, archive: archiveView, markdown: markdownView, html: htmlView, other: iconView })[peek.kind] ?? null
+                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, sheet: sheetView, pdf: pdfView, folder: folderView, archive: archiveView, office: officeView, markdown: markdownView, html: htmlView, other: iconView })[peek.kind] ?? null
             }
 
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
@@ -146,7 +149,8 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 textFormat: Text.RichText
                 elide: Text.ElideRight
-                text: peek.details + (noteLabel.text ? "  ·  <i>" + noteLabel.text + "</i>" : "")
+                // a view's `status` ("loading full preview…") shows here too
+                text: peek.details + (preview.item?.status ? "  ·  <i>" + preview.item.status + "</i>" : "") + (noteLabel.text ? "  ·  <i>" + noteLabel.text + "</i>" : "")
                 Label { id: noteLabel; visible: false }
                 Timer { id: noteTimer; interval: 2000; onTriggered: noteLabel.text = "" }
             }
@@ -203,6 +207,7 @@ ApplicationWindow {
     Component { id: markdownView; TextView { text: peek.text; format: "markdown"; baseUrl: peek.source } }
     Component { id: htmlView; TextView { text: peek.text; format: "html"; baseUrl: peek.source } }
     Component { id: pdfView; PdfView { source: peek.source } }
+    Component { id: officeView; OfficeView { path: peek.path; icon: peek.icon } }
 
     Component {
         id: iconView

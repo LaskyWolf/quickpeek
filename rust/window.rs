@@ -5,9 +5,11 @@
 mod app;
 mod browse;
 mod embedded;
+mod convert;
 mod files;
 mod helpers;
 mod media;
+mod office;
 mod sheet;
 mod socket;
 mod text;

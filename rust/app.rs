@@ -130,6 +130,8 @@ fn kind_of(path: &Path) -> &'static str {
         "font" // by suffix too: .otf/.otc are also OpenDocument template globs
     } else if is_sheet(path) {
         "sheet"
+    } else if crate::office::handles(path) {
+        "office"
     } else if embedded::has_preview(path) || helpers::can_read_image(&text) {
         "image"
     } else if helpers::mime_inherits(&text, "text/markdown") {

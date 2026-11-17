@@ -46,6 +46,18 @@ pub mod ffi {
         fn thumbnail_key(path: &str) -> String;
         fn mime_icon_for_name(name: &str) -> String;
         fn local_time(secs: i64) -> String;
+        fn md5_hex(text: &str) -> String;
+        /// A page of a PDF, `width` pixels wide, on white; no pixels when it can't. Safe on worker threads.
+        fn render_pdf_page(pdf: &str, page: i32, width: i32) -> Pixels;
+        /// Saves premultiplied 0xAARRGGBB pixels as a PNG.
+        fn save_png(path: &str, width: i32, height: i32, pixels: &[u32]) -> bool;
+    }
+
+    /// A rendered page: 0xffRRGGBB pixels, row by row.
+    struct Pixels {
+        width: i32,
+        height: i32,
+        data: Vec<u32>,
     }
 }
 

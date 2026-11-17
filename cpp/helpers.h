@@ -6,6 +6,7 @@
 
 struct MimeInfo;
 struct DolphinSort;
+struct Pixels;
 
 void create_app(rust::Vec<rust::String> args);
 int exec_app();
@@ -29,3 +30,6 @@ void block_network(QQmlApplicationEngine &engine);
 rust::String thumbnail_key(rust::Str path);
 rust::String mime_icon_for_name(rust::Str name);
 rust::String local_time(std::int64_t secs);
+rust::String md5_hex(rust::Str text);
+Pixels render_pdf_page(rust::Str pdf, std::int32_t page, std::int32_t width);
+bool save_png(rust::Str path, std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels);

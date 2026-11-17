@@ -24,6 +24,7 @@ memmap2 = "0.9"
 png = "0.18"
 rusqlite = { version = "0.40", features = ["bundled", "serialize"] }
 ruzstd = "0.9.1"
+roxmltree = "0.20"
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
