@@ -20,3 +20,5 @@ rust::String formatted_size(std::uint64_t bytes);
 void copy_text(rust::Str text);
 void copy_file(rust::Str path, bool with_image);
 bool move_to_trash(rust::Str path);
+class QQmlApplicationEngine;
+void block_network(QQmlApplicationEngine &engine);

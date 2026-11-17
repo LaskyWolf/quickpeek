@@ -110,6 +110,10 @@ fn kind_of(path: &Path) -> &'static str {
         "other" // ponytail: folder view not ported yet
     } else if helpers::can_read_image(&text) {
         "image"
+    } else if helpers::mime_inherits(&text, "text/markdown") {
+        "markdown"
+    } else if helpers::mime_inherits(&text, "text/html") || helpers::mime_inherits(&text, "application/xhtml+xml") {
+        "html"
     } else if helpers::mime_inherits(&text, "text/plain") {
         "text"
     } else {
@@ -207,7 +211,7 @@ impl qobject::Peek {
         let icon = if mime.icon.is_empty() { mime.generic_icon } else { mime.icon };
 
         // The view switches on `kind`, so the content it reads is set first
-        self.as_mut().set_text(QString::from(if kind == "text" { read_text(&path) } else { String::new() }.as_str()));
+        self.as_mut().set_text(QString::from(if matches!(kind, "text" | "markdown" | "html") { read_text(&path) } else { String::new() }.as_str()));
         self.as_mut().set_source(url(&path));
         self.as_mut().set_path(QString::from(text.as_ref()));
         self.as_mut().set_details(QString::from(details.as_str()));

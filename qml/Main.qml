@@ -69,7 +69,15 @@ ApplicationWindow {
     Shortcut { sequence: "Return"; onActivated: { peek.openExternal(); win.close() } }
     Shortcut { sequences: ["Left", "Up"]; onActivated: peek.step(-1) }
     Shortcut { sequences: ["Right", "Down"]; onActivated: peek.step(1) }
-    Shortcut { sequences: [StandardKey.Copy]; onActivated: { peek.copyFile(); win.note("copied") } }
+    Shortcut {
+        sequences: [StandardKey.Copy]
+        onActivated: {
+            if (!preview.item?.copySelection?.()) { // selected text first, else the file
+                peek.copyFile()
+                win.note("copied")
+            }
+        }
+    }
     Shortcut { sequence: "Ctrl+Shift+C"; onActivated: { peek.copyPath(); win.note("path copied") } }
     Shortcut { sequence: "F2"; onActivated: renameDialog.open() }
     Shortcut { sequences: [StandardKey.Delete]; onActivated: win.trash() }
@@ -97,8 +105,9 @@ ApplicationWindow {
             clip: true
 
             Loader {
+                id: preview
                 anchors.fill: parent
-                sourceComponent: ({ image: imageView, text: textView, other: iconView })[peek.kind] ?? null
+                sourceComponent: ({ image: imageView, text: textView, markdown: markdownView, html: htmlView, other: iconView })[peek.kind] ?? null
             }
 
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
@@ -184,19 +193,9 @@ ApplicationWindow {
 
     Component { id: imageView; ImageView { source: peek.source } }
 
-    Component {
-        id: textView
-        ScrollView {
-            TextArea {
-                text: peek.text
-                readOnly: true
-                font.family: "monospace"
-                wrapMode: TextEdit.NoWrap
-                selectByMouse: true
-                activeFocusOnPress: false // keep Space and the arrow keys on the window
-            }
-        }
-    }
+    Component { id: textView; TextView { text: peek.text; name: win.title } }
+    Component { id: markdownView; TextView { text: peek.text; format: "markdown"; baseUrl: peek.source } }
+    Component { id: htmlView; TextView { text: peek.text; format: "html"; baseUrl: peek.source } }
 
     Component {
         id: iconView

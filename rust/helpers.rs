@@ -35,6 +35,10 @@ pub mod ffi {
         fn copy_text(text: &str);
         fn copy_file(path: &str, with_image: bool);
         fn move_to_trash(path: &str) -> bool;
+
+        include!("cxx-qt-lib/qqmlapplicationengine.h");
+        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
+        fn block_network(engine: Pin<&mut QQmlApplicationEngine>);
     }
 }
 
