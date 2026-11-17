@@ -39,6 +39,10 @@ pub mod ffi {
         fn locale_decimal_point() -> String;
         fn locale_group_separator() -> String;
         fn locale_datetime(iso: &str) -> String;
+
+        include!("cxx-qt-lib/qqmlapplicationengine.h");
+        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
+        fn block_network(engine: Pin<&mut QQmlApplicationEngine>);
     }
 }
 

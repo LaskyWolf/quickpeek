@@ -168,3 +168,36 @@ rust::String locale_datetime(rust::Str iso)
     const QDateTime time = QDateTime::fromString(text, Qt::ISODate);
     return r(time.isValid() ? QLocale().toString(time, QLocale::ShortFormat) : text);
 }
+
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QQmlApplicationEngine>
+#include <QQmlNetworkAccessManagerFactory>
+
+namespace {
+// Previews never reach the web: an HTML or Markdown file can't load remote images that report it was opened
+class LocalOnly : public QNetworkAccessManager {
+protected:
+    QNetworkReply *createRequest(Operation op, const QNetworkRequest &request, QIODevice *data) override
+    {
+        const QUrl url = request.url();
+        const bool local = url.isLocalFile() || url.scheme() == u"qrc" || url.scheme() == u"data";
+        return QNetworkAccessManager::createRequest(op, local ? request : QNetworkRequest(), data);
+    }
+};
+
+struct LocalOnlyFactory : QQmlNetworkAccessManagerFactory {
+    QNetworkAccessManager *create(QObject *parent) override
+    {
+        auto *manager = new LocalOnly;
+        manager->setParent(parent);
+        return manager;
+    }
+};
+}
+
+void block_network(QQmlApplicationEngine &engine)
+{
+    static LocalOnlyFactory factory;
+    engine.setNetworkAccessManagerFactory(&factory);
+}

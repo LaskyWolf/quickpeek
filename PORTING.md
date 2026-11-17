@@ -35,7 +35,7 @@ Previewers
 - [x] Images: zoom/pan, animated GIF/WebP, SVG, preload neighbours
 - [ ] Images: Krita/ORA/XCF/PSD/Clip, thumbnails of other files, AI tools toolbar
 - [x] Plain text
-- [ ] Code highlighting, Markdown/HTML, search popup (Ctrl+F)
+- [x] Code highlighting, Markdown/HTML, search popup (Ctrl+F)
 - [ ] Folders, archives (libarchive, 7z)
 - [x] Fonts
 - [x] Audio with waveform, video with seek and speed

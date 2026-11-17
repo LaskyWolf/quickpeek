@@ -24,3 +24,5 @@ rust::String locale_number(double value);
 rust::String locale_decimal_point();
 rust::String locale_group_separator();
 rust::String locale_datetime(rust::Str iso);
+class QQmlApplicationEngine;
+void block_network(QQmlApplicationEngine &engine);
