@@ -108,6 +108,8 @@ fn kind_of(path: &Path) -> &'static str {
     let text = path.to_string_lossy();
     if path.is_dir() {
         "other" // ponytail: folder view not ported yet
+    } else if let Some(kind) = crate::media::kind(&text) {
+        kind
     } else if helpers::can_read_image(&text) {
         "image"
     } else if helpers::mime_inherits(&text, "text/plain") {

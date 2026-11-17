@@ -38,7 +38,7 @@ Previewers
 - [ ] Code highlighting, Markdown/HTML, search popup (Ctrl+F)
 - [ ] Folders, archives (libarchive, 7z)
 - [ ] Fonts
-- [ ] Audio with waveform, video with seek and speed
+- [x] Audio with waveform, video with seek and speed
 - [ ] PDF reading, search, text selection
 - [ ] Spreadsheets (xlsx/ods/csv)
 - [ ] Office pages via ONLYOFFICE x2t, Word view
