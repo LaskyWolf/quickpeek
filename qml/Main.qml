@@ -159,6 +159,16 @@ ApplicationWindow {
                 sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, sheet: sheetView, pdf: pdfView, folder: folderView, archive: archiveView, office: officeView, model: modelView, markdown: htmlView, html: htmlView, other: iconView })[peek.kind] ?? null
             }
 
+            // Started from the app menu, with no file: say it works and where previews come from
+            Kirigami.PlaceholderMessage {
+                anchors.centerIn: parent
+                width: parent.width - Kirigami.Units.gridUnit * 4
+                visible: peek.path === ""
+                icon.name: "quickpeek"
+                text: "KDEQuickPeek is installed and working"
+                explanation: "Select a file in Dolphin and press Space, or right-click it and choose Quick Preview."
+            }
+
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
             Repeater {
                 model: [peek.previous, peek.next]
@@ -173,6 +183,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.margins: 8
             spacing: 8
+            visible: peek.path !== "" // no file, nothing to drag or open
 
             // Drag it into another app to hand over the file
             ToolButton {
@@ -230,6 +241,7 @@ ApplicationWindow {
     Rectangle {
         id: tray
         parent: frame
+        visible: peek.path !== "" // no file, no details
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 6

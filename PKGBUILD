@@ -7,25 +7,20 @@ arch=(x86_64)
 makedepends=(cargo)
 options=(!lto)  # GCC LTO objects from the C++ helpers are unreadable for the Rust linker; Cargo.toml does LTO
 license=(GPL-3.0-or-later)
-depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d qqc2-desktop-style kirigami glib2)
+depends=(qt6-base qt6-declarative qt6-multimedia qt6-quick3d qt6-webengine qt6-svg qt6-imageformats
+         libarchive kirigami qqc2-desktop-style)  # qt6-webengine ships Qt PDF
 optdepends=(
-  'python-pymupdf: PDF editor'
-  'python-numpy: subject picking and finding text in images'
-  'onnxruntime-cpu: AI tools in the new window (subject picking, finding text in images)'
-  'python-onnxruntime-cpu: AI tools (subject picking, finding text in images)'
-  'python-scipy: cleaner subject cut-outs, finding text in images'
-  'python-pillow: more image formats'
-  'python-openpyxl: spreadsheet preview'
-  'python-pygments: code highlighting'
+  'onnxruntime-cpu: AI tools (subject picking, finding text in images)'
+  'kimageformats: PSD, XCF, AVIF, HEIF and other picture formats'
+  'python: Space on desktop icons (quickpeek-desktop)'
   'ffmpeg: video thumbnails, conversions and audio waveforms'
   'onlyoffice-bin: Word, Excel, PowerPoint and OpenDocument pages, presentations with Morph (AUR)'
   'assimp: converting 3D models to other formats'
   'blender: 3D preview of .blend files'
   'krita: full-size preview of Krita archives (.krz)'
-  'poppler: PDF thumbnails'
+  'poppler: PDF details and PDF to pictures'
   'ghostscript: PostScript preview'
   '7zip: more archive formats'
-  'libarchive: archive preview'
   'waifu2x-ncnn-vulkan: image enlarging'
   'plasma-workspace: set as wallpaper'
   'dolphin: show in folder'
@@ -40,13 +35,12 @@ pkgver() {
 
 build() {
   cd "$startdir"
-  QUICKPEEK_PY=/usr/lib/quickpeek/quickpeek.py cargo build --release --locked --workspace --target-dir "$srcdir/target"
+  cargo build --release --locked --workspace --target-dir "$srcdir/target"
 }
 
 package() {
   install -Dm755 "$srcdir/target/release/quickpeek" "$pkgdir/usr/bin/quickpeek"
   install -Dm755 "$srcdir/target/release/quickpeek-window" "$pkgdir/usr/bin/quickpeek-window"
-  install -Dm644 "$startdir/quickpeek.py" "$pkgdir/usr/lib/quickpeek/quickpeek.py"
   install -Dm755 quickpeek-desktop.py "$pkgdir/usr/bin/quickpeek-desktop"
   install -Dm644 quickpeek.desktop "$pkgdir/usr/share/kio/servicemenus/quickpeek.desktop"
   install -Dm644 quickpeek-app.desktop "$pkgdir/usr/share/applications/quickpeek.desktop"

@@ -1,12 +1,9 @@
 # Rust port
 
-QuickPeek is moving from Python (`quickpeek.py`) to Rust + QML (cxx-qt 0.10, Qt 6).
-Until every item below is ported, both apps ship:
+QuickPeek is Rust + QML (cxx-qt 0.10, Qt 6). Two binaries:
 
-- `quickpeek` (Rust, `rust/main.rs`, package `launcher/`) hands the file to the running window without loading Qt.
-- `quickpeek-window` (Rust + QML, `rust/window.rs`) is the new window. Try it: `QUICKPEEK_NEXT=1 quickpeek FILE` after `quickpeek --quit`.
-- With no window running, it starts `quickpeek-window` when `QUICKPEEK_NEXT=1` is set, else the Python app.
-- The switch flips to Rust by default when the checklist is done; then `quickpeek.py` is deleted.
+- `quickpeek` (`rust/main.rs`, package `launcher/`) hands the file to the running window without loading Qt, or starts the window.
+- `quickpeek-window` (`rust/window.rs`) is the window.
 
 ## Layout
 
@@ -54,6 +51,6 @@ Tools
 - [x] Image enlarging (waifu2x)
 
 Release
-- [ ] Rust app is the default, `quickpeek.py` and its tests deleted
+- [x] Rust app is the default, `quickpeek.py` and its tests deleted
 - [ ] `install.sh` downloads a prebuilt binary from the GitHub release
 - [ ] README updated

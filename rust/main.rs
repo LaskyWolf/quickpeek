@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! KDEQuickPeek launcher. `quickpeek FILE` hands FILE to the QuickPeek window that is already
 //! running, without loading Qt, so Space in Dolphin answers in a few milliseconds.
-//! When no window runs yet, it starts the full app.
+//! When no window runs yet, it starts the window (`quickpeek-window`, next to this binary).
 
 mod socket;
 
@@ -10,12 +10,6 @@ use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
-
-// ponytail: the previewers still live in the Python app; this goes once they are ported to Rust
-const PYTHON_APP: &str = match option_env!("QUICKPEEK_PY") {
-    Some(path) => path,
-    None => "/usr/lib/quickpeek/quickpeek.py",
-};
 
 /// A plain path or a file:// URL as a local path. None for other URLs (like desktop:/).
 fn local_path(arg: &str) -> Option<PathBuf> {
@@ -79,14 +73,14 @@ fn main() -> ExitCode {
             }
             return ExitCode::SUCCESS;
         }
-    // No window yet, or an argument only the full app understands: start the full app.
-    let error = if std::env::var_os("QUICKPEEK_NEXT").is_some() {
-        let window = std::env::current_exe().map(|exe| exe.with_file_name("quickpeek-window"));
-        Command::new(window.unwrap_or_default()).args(&args).exec()
-    } else {
-        Command::new("python3").arg(PYTHON_APP).args(&args).exec()
-    };
-    eprintln!("quickpeek: cannot start {PYTHON_APP}: {error}");
+    if message.as_deref() == Some("--quit") {
+        println!("not running");
+        return ExitCode::SUCCESS;
+    }
+    // No window yet: start one, with the file
+    let window = std::env::current_exe().map(|exe| exe.with_file_name("quickpeek-window")).unwrap_or_default();
+    let error = Command::new(&window).args(&args).exec();
+    eprintln!("quickpeek: cannot start {}: {error}", window.display());
     ExitCode::FAILURE
 }
 
