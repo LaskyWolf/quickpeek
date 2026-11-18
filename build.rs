@@ -11,4 +11,9 @@ fn main() {
         .files(["rust/app.rs", "rust/helpers.rs", "rust/media.rs", "rust/sheet.rs", "rust/text.rs", "rust/browse.rs", "rust/office.rs", "rust/model.rs", "rust/details.rs", "rust/desktop.rs", "rust/pdfedit.rs", "rust/tools.rs", "rust/ai.rs"])
         .cpp_file("cpp/helpers.cpp")
         .build();
+    // List these Qt libraries again after the C++ helpers that use them: with --as-needed (Fedora's
+    // default), the linker drops a library listed before the code that needs it
+    for module in ["Widgets", "DBus", "Network", "Pdf", "QuickControls2", "Quick", "Qml", "Gui", "Core"] {
+        println!("cargo:rustc-link-lib=Qt6{module}");
+    }
 }
