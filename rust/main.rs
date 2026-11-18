@@ -64,14 +64,13 @@ fn main() -> ExitCode {
             .map(|p| p.to_string_lossy().into_owned()),
         _ => None,
     };
-    if let Some(message) = &message {
-        if send_to_running(message) {
+    if let Some(message) = &message
+        && send_to_running(message) {
             if message == "--quit" {
                 println!("stopped");
             }
             return ExitCode::SUCCESS;
         }
-    }
     // No window yet, or an argument only the full app understands: start the full app.
     let error = if std::env::var_os("QUICKPEEK_NEXT").is_some() {
         let window = std::env::current_exe().map(|exe| exe.with_file_name("quickpeek-window"));
