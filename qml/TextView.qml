@@ -10,7 +10,7 @@ Control {
     property string text
     property string name // file name: picks the code language
     property url baseUrl // Markdown/HTML load relative images from here
-    property string format: "plain" // "plain", "markdown" or "html"
+    property string format: "plain" // "plain" or "html" (Markdown arrives as HTML)
     readonly property bool dark: palette.window.hslLightness < 0.5
     readonly property bool code: format === "plain" && highlighter.html !== ""
 
@@ -50,8 +50,7 @@ Control {
         TextArea.flickable: TextArea {
             id: area
             text: view.code ? highlighter.html : view.text
-            textFormat: view.format === "markdown" ? TextEdit.MarkdownText
-                : view.format === "html" || view.code ? TextEdit.RichText : TextEdit.PlainText
+            textFormat: view.format === "html" || view.code ? TextEdit.RichText : TextEdit.PlainText
             baseUrl: view.baseUrl
             font.family: view.format === "plain" ? "monospace" : Qt.application.font.family
             wrapMode: view.format === "plain" ? TextEdit.NoWrap : TextEdit.Wrap

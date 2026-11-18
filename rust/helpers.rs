@@ -63,6 +63,7 @@ pub mod ffi {
         fn convert_image(src: &str, dst: &str) -> String;
         /// Markdown, HTML or plain text to a PDF or HTML file with Qt's text engine. Qt thread only.
         fn text_to_document(src: &str, dst: &str, mime: &str) -> bool;
+        fn markdown_to_html(text: &str) -> String;
     }
 
     /// A rendered page: 0xffRRGGBB pixels, row by row.

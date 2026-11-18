@@ -149,7 +149,7 @@ ApplicationWindow {
             Loader {
                 id: preview
                 anchors.fill: parent
-                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, sheet: sheetView, pdf: pdfView, folder: folderView, archive: archiveView, office: officeView, model: modelView, markdown: markdownView, html: htmlView, other: iconView })[peek.kind] ?? null
+                sourceComponent: ({ image: imageView, text: textView, font: fontView, audio: mediaView, video: mediaView, sheet: sheetView, pdf: pdfView, folder: folderView, archive: archiveView, office: officeView, model: modelView, markdown: htmlView, html: htmlView, other: iconView })[peek.kind] ?? null
             }
 
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
@@ -305,8 +305,7 @@ ApplicationWindow {
     Component { id: mediaView; MediaView { source: peek.source; audio: peek.kind === "audio"; icon: peek.icon } }
 
     Component { id: textView; TextView { text: peek.text; name: win.title } }
-    Component { id: markdownView; TextView { text: peek.text; format: "markdown"; baseUrl: peek.source } }
-    Component { id: htmlView; TextView { text: peek.text; format: "html"; baseUrl: peek.source } }
+    Component { id: htmlView; TextView { text: peek.text; format: "html"; baseUrl: peek.source } } // Markdown arrives as HTML too
     Component { id: pdfView; PdfView { source: peek.source } }
     Component { id: officeView; OfficeView { path: peek.path; icon: peek.icon } }
 

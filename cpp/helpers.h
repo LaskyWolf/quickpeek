@@ -42,3 +42,4 @@ rust::Vec<rust::String> writable_image_formats();
 bool image_animated(rust::Str path);
 rust::String convert_image(rust::Str src, rust::Str dst);
 bool text_to_document(rust::Str src, rust::Str dst, rust::Str mime);
+rust::String markdown_to_html(rust::Str text);

@@ -398,3 +398,10 @@ bool text_to_document(rust::Str src, rust::Str dst, rust::Str mime)
     doc.print(&writer);
     return true;
 }
+
+rust::String markdown_to_html(rust::Str text)
+{
+    QTextDocument doc;
+    doc.setMarkdown(q(text));
+    return r(doc.toHtml());
+}

@@ -161,6 +161,11 @@ fn is_sheet(path: &Path) -> bool {
     ["xlsx", "xlsm", "xlsb", "xls", "ods", "csv", "tsv"].contains(&ext.as_str())
 }
 
+/// Every picture at most as wide as the window: Qt draws them full size otherwise.
+fn fit_images(html: &str) -> String {
+    html.replace("<img ", "<img style=\"max-width:100%\" ").replace("<IMG ", "<IMG style=\"max-width:100%\" ")
+}
+
 fn read_text(path: &Path) -> String {
     let mut bytes = Vec::new();
     if let Ok(file) = std::fs::File::open(path) {
@@ -251,7 +256,13 @@ impl qobject::Peek {
         let icon = if mime.icon.is_empty() { mime.generic_icon } else { mime.icon };
 
         // The view switches on `kind`, so the content it reads is set first
-        self.as_mut().set_text(QString::from(if matches!(kind, "text" | "markdown" | "html") { read_text(&path) } else { String::new() }.as_str()));
+        let content = match kind {
+            "text" => read_text(&path),
+            "markdown" => fit_images(&helpers::markdown_to_html(&read_text(&path))),
+            "html" => fit_images(&read_text(&path)),
+            _ => String::new(),
+        };
+        self.as_mut().set_text(QString::from(content.as_str()));
         self.as_mut().set_source(url(&path));
         let direct = kind == "image" && direct_image(&path);
         self.as_mut().set_picture(if direct { url(&path) } else { QUrl::default() });
