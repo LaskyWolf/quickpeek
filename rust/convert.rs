@@ -44,6 +44,7 @@ impl Drop for Job {
 }
 
 /// Runs commands for a job, killing them when the job is cancelled.
+#[derive(Default)] // a default one is never cancelled
 pub struct Runner(Arc<AtomicBool>);
 
 impl Runner {
@@ -175,6 +176,7 @@ pub fn x2t_convert(src: &Path, dst: &Path, format: u32, runner: &Runner) -> io::
     std::fs::create_dir_all(&work)?;
     let task = work.join("task.xml");
     let [src, dst, tmp, fonts_dir, all_fonts] = [src, dst, &work, &fonts, &fonts.join("AllFonts.js")].map(|p| escape(&p.to_string_lossy()));
+    // CSV in or out fails (exit 89) without an encoding (46 = UTF-8) and a delimiter (4 = comma); other files ignore them
     std::fs::write(
         &task,
         format!(
@@ -183,6 +185,8 @@ pub fn x2t_convert(src: &Path, dst: &Path, format: u32, runner: &Runner) -> io::
   <m_sFileFrom>{src}</m_sFileFrom>
   <m_sFileTo>{dst}</m_sFileTo>
   <m_nFormatTo>{format}</m_nFormatTo>
+  <m_nCsvTxtEncoding>46</m_nCsvTxtEncoding>
+  <m_nCsvDelimiter>4</m_nCsvDelimiter>
   <m_sTempDir>{tmp}</m_sTempDir>
   <m_sFontDir>{fonts_dir}</m_sFontDir>
   <m_sAllFontsPath>{all_fonts}</m_sAllFontsPath>

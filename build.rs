@@ -8,7 +8,7 @@ fn main() {
         .qt_module("QuickControls2")
         .qt_module("Quick")
         .qt_module("Pdf")
-        .files(["rust/app.rs", "rust/helpers.rs", "rust/media.rs", "rust/sheet.rs", "rust/text.rs", "rust/browse.rs", "rust/office.rs", "rust/model.rs", "rust/details.rs", "rust/desktop.rs", "rust/pdfedit.rs"])
+        .files(["rust/app.rs", "rust/helpers.rs", "rust/media.rs", "rust/sheet.rs", "rust/text.rs", "rust/browse.rs", "rust/office.rs", "rust/model.rs", "rust/details.rs", "rust/desktop.rs", "rust/pdfedit.rs", "rust/tools.rs"])
         .cpp_file("cpp/helpers.cpp")
         .build();
 }

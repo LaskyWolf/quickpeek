@@ -71,6 +71,7 @@ ApplicationWindow {
         const snapshot = Qt.application.arguments.find(a => a.startsWith("--snapshot="))
         if (snapshot)
             snapshotTimer.file = snapshot.slice(11)
+        win.sideOpen = Qt.application.arguments.includes("--side") // for tests: snapshot the side panel
     }
 
     Timer {
@@ -213,6 +214,7 @@ ApplicationWindow {
         source: peek.source
         icon: peek.icon
         picture: peek.kind === "image"
+        onOpenFile: path => peek.open(path)
     }
     // Filled only while open: browsing with the panel closed reads nothing
     Binding { target: sidePanel; property: "path"; value: peek.path; when: win.sideOpen; restoreMode: Binding.RestoreNone }

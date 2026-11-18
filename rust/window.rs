@@ -17,6 +17,7 @@ mod pdfedit;
 mod sheet;
 mod socket;
 mod text;
+mod tools;
 
 use cxx_qt_lib::{QQmlApplicationEngine, QUrl};
 

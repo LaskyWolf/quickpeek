@@ -327,3 +327,74 @@ void add_pdf_pages(QQmlApplicationEngine &engine)
 {
     engine.addImageProvider(QStringLiteral("pdfpage"), new PdfPageProvider);
 }
+
+#include <QFileInfo>
+#include <QFontDatabase>
+#include <QImageWriter>
+#include <QPainter>
+#include <QPdfWriter>
+#include <QTextDocument>
+
+rust::Vec<rust::String> writable_image_formats()
+{
+    rust::Vec<rust::String> out;
+    for (const QByteArray &format : QImageWriter::supportedImageFormats())
+        out.push_back(rust::String(format.toStdString()));
+    return out;
+}
+
+bool image_animated(rust::Str path) { return QImageReader(q(path)).supportsAnimation(); }
+
+rust::String convert_image(rust::Str src, rust::Str dst)
+{
+    QImageReader reader(q(src));
+    reader.setAutoTransform(true); // honour EXIF rotation
+    QImage image = reader.read();
+    if (image.isNull())
+        return r(reader.errorString());
+    const QString out = q(dst);
+    if (out.endsWith(QLatin1String(".pdf"))) {
+        QPdfWriter writer(out);
+        // 1 px = 1 pt, exact: the default fuzzy match would snap the page to the nearest paper size
+        writer.setPageSize(QPageSize(QSizeF(image.size()), QPageSize::Point, QString(), QPageSize::ExactMatch));
+        writer.setPageMargins(QMarginsF(0, 0, 0, 0));
+        writer.setResolution(72);
+        QPainter painter(&writer);
+        painter.drawImage(0, 0, image);
+        return rust::String();
+    }
+    if ((out.endsWith(QLatin1String(".jpg")) || out.endsWith(QLatin1String(".bmp"))) && image.hasAlphaChannel()) {
+        QImage flat(image.size(), QImage::Format_RGB32); // no transparency there: flatten on white
+        flat.fill(Qt::white);
+        QPainter(&flat).drawImage(0, 0, image);
+        image = flat;
+    }
+    return image.save(out, nullptr, 92) ? rust::String() : rust::String("Qt could not write this format");
+}
+
+bool text_to_document(rust::Str src, rust::Str dst, rust::Str mime)
+{
+    QFile file(q(src));
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    const QString text = QString::fromUtf8(file.read(1'000'000)); // same cut as the text view
+    QTextDocument doc;
+    doc.setBaseUrl(QUrl::fromLocalFile(QFileInfo(q(src)).absolutePath() + QLatin1Char('/')));
+    if (q(mime) == QLatin1String("text/markdown")) {
+        doc.setMarkdown(text);
+    } else if (q(mime) == QLatin1String("text/html")) {
+        doc.setHtml(text);
+    } else {
+        doc.setPlainText(text);
+        doc.setDefaultFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    }
+    const QString out = q(dst);
+    if (out.endsWith(QLatin1String(".html"))) {
+        QFile html(out);
+        return html.open(QIODevice::WriteOnly) && html.write(doc.toHtml().toUtf8()) >= 0;
+    }
+    QPdfWriter writer(out);
+    writer.setPageSize(QPageSize(QPageSize::A4));
+    doc.print(&writer);
+    return true;
+}

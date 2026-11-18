@@ -17,7 +17,11 @@ Pane {
     rightPadding: 10
     bottomPadding: 10
 
+    signal openFile(string path) // a converted file's name was clicked: preview it here
+
     Details { id: details }
+    Tools { id: tools; path: details.path }
+    Desktop { id: desktop }
 
     // Python's details are one two-column table, so the label column lines up across sections
     readonly property var cells: {
@@ -115,24 +119,61 @@ Pane {
                 }
             }
 
-            // ---- Tools page: conversions (ffmpeg, assimp, x2t, images) and the AI tools go here.
-            // Python: SidePanel.show_file / start and convert_targets(): one button per target, the latest
-            // result as a link that previews it, "Saved next to the original. Existing files are never replaced."
+            // ---- Tools page: one button per conversion, the latest job above them
             Label {
                 Layout.topMargin: 10
                 text: "Tools"
                 font.bold: true
             }
-            ColumnLayout {
-                id: tools
+            RowLayout { // the latest job: progress, then a link to what it made, or the error
                 Layout.fillWidth: true
+                visible: tools.status !== ""
                 spacing: 4
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.Wrap
-                    text: "No tools for this type of file."
-                    enabled: false // the theme's dimmed text color
+                    textFormat: Text.StyledText
+                    text: tools.status
+                    onLinkActivated: panel.openFile(tools.result)
+                    HoverHandler { enabled: tools.result !== ""; cursorShape: Qt.PointingHandCursor }
+                    ToolTip.visible: tools.result !== "" && hoveredLink !== ""
+                    ToolTip.text: "Preview it here"
                 }
+                BusyIndicator {
+                    visible: tools.busy
+                    running: tools.busy
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                }
+                ToolButton {
+                    visible: tools.result !== ""
+                    icon.name: "document-open-folder"
+                    focusPolicy: Qt.NoFocus
+                    onClicked: desktop.showInFolder(tools.result)
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Show in folder"
+                }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Repeater {
+                    model: tools.targets ? JSON.parse(tools.targets) : []
+                    Button {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        focusPolicy: Qt.NoFocus // clicking it must not steal Space and the arrow keys
+                        text: modelData[1]
+                        icon.name: modelData[2]
+                        onClicked: tools.start(modelData[0])
+                    }
+                }
+            }            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: tools.targets === "[]" || !tools.targets ? "No tools for this type of file."
+                                                               : "Saved next to the original. Existing files are never replaced."
+                enabled: false // the theme's dimmed text color
             }
         }
     }
