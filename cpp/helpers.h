@@ -35,3 +35,7 @@ Pixels render_pdf_page(rust::Str pdf, std::int32_t page, std::int32_t width);
 bool save_png(rust::Str path, std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels);
 rust::String qt_binaries_dir();
 rust::Vec<std::uint8_t> rgba_bottom_up_png(rust::Slice<const std::uint8_t> pixels, int width, int height);
+struct ImageHeader;
+ImageHeader image_header(rust::Str path);
+rust::Vec<rust::String> mime_ancestors(rust::Str path);
+rust::String locale_integer(std::int64_t value);

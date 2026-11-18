@@ -6,6 +6,8 @@ mod app;
 mod browse;
 mod embedded;
 mod convert;
+mod desktop;
+mod details;
 mod files;
 mod helpers;
 mod media;

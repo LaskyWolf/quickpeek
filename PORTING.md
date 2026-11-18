@@ -24,11 +24,11 @@ Shell
 - [x] Files in Dolphin's order (live D-Bus, saved view settings, natural name key)
 - [x] Bottom bar: drag icon, name, type, size, position, Open button
 - [x] Keys: Space/Q/Esc close, Return open, arrows, Ctrl+C, Ctrl+Shift+C, F2, Del, F11
-- [ ] Key I: side panel
+- [x] Key I: side panel
 - [x] Previous/next arrows on the preview edges
-- [ ] Right-click menu: Open, Open With, Show in Folder, Copy, Copy Path, Rename, Trash, Wallpaper, Full Screen
-- [ ] Window size and volume remembered
-- [ ] Side panel: file details per type
+- [x] Right-click menu: Open, Open With, Show in Folder, Copy, Copy Path, Rename, Trash, Wallpaper, Full Screen
+- [x] Window size and volume remembered
+- [x] Side panel: file details per type (tools page still empty)
 - [ ] Cache folder, pruning, `move_old_files` (drop)
 
 Previewers

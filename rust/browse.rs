@@ -82,7 +82,7 @@ fn json_str(s: &str) -> String {
 }
 
 /// (files, folders, bytes, complete) for everything under `folder`, giving up after `deadline`.
-fn folder_summary(folder: &Path, deadline: Duration) -> (u64, u64, u64, bool) {
+pub(crate) fn folder_summary(folder: &Path, deadline: Duration) -> (u64, u64, u64, bool) {
     let stop = Instant::now() + deadline;
     let (mut files, mut folders, mut size) = (0, 0, 0);
     let mut pending = vec![folder.to_path_buf()];
@@ -261,6 +261,12 @@ fn list_archive(path: &Path) -> Option<Vec<Entry>> {
             .ok()?; // ponytail: no timeout; the worker thread just stays busy if 7z hangs
         parse_7z(&String::from_utf8_lossy(&out.stdout))
     })
+}
+
+/// (files, unpacked bytes) of an archive, for the side panel.
+pub(crate) fn archive_totals(path: &Path) -> Option<(usize, u64)> {
+    let files: Vec<Entry> = list_archive(path)?.into_iter().filter(|e| !e.is_dir).collect();
+    Some((files.len(), files.iter().filter_map(|e| e.size).sum()))
 }
 
 struct Row<'a> {

@@ -53,6 +53,9 @@ pub mod ffi {
         fn save_png(path: &str, width: i32, height: i32, pixels: &[u32]) -> bool;
         fn qt_binaries_dir() -> String;
         fn rgba_bottom_up_png(pixels: &[u8], width: i32, height: i32) -> Vec<u8>;
+        fn image_header(path: &str) -> ImageHeader;
+        fn mime_ancestors(path: &str) -> Vec<String>;
+        fn locale_integer(value: i64) -> String;
     }
 
     /// A rendered page: 0xffRRGGBB pixels, row by row.
@@ -60,6 +63,13 @@ pub mod ffi {
         width: i32,
         height: i32,
         data: Vec<u32>,
+    }
+
+    /// Picture size and format from the file header; width -1 when Qt can't read it.
+    struct ImageHeader {
+        width: i32,
+        height: i32,
+        format: String,
     }
 }
 

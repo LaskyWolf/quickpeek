@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The QuickPeek window: the preview, previous/next arrows, and the file bar at the bottom.
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -12,8 +13,19 @@ ApplicationWindow {
     title: peek.path.split("/").pop()
     minimumWidth: 640
     minimumHeight: 420
-    width: Screen.desktopAvailableWidth * 0.6
-    height: Screen.desktopAvailableHeight * 0.7
+    width: settings.width || Screen.desktopAvailableWidth * 0.6
+    height: settings.height || Screen.desktopAvailableHeight * 0.7
+    property bool sideOpen: false // the side panel; every new launch starts with it closed
+
+    // The size you left the window at; same file as the Python app, its own [window] group
+    Settings {
+        id: settings
+        location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/quickpeek/quickpeek.conf"
+        category: "window"
+        property int width
+        property int height
+        property bool maximized
+    }
 
     Peek {
         id: peek
@@ -23,6 +35,7 @@ ApplicationWindow {
             } else if (win.visible && path === peek.path) {
                 win.close() // Space on the same file again closes, like Sushi
             } else {
+                win.sideOpen = false
                 peek.open(path)
                 peek.activate(token)
                 win.showAndRaise()
@@ -43,6 +56,8 @@ ApplicationWindow {
 
     Component.onCompleted: {
         peek.start()
+        if (settings.maximized)
+            showMaximized()
         showAndRaise()
         // For tests: quickpeek-window FILE --snapshot=OUT.png saves the window and quits
         const snapshot = Qt.application.arguments.find(a => a.startsWith("--snapshot="))
@@ -55,12 +70,18 @@ ApplicationWindow {
         property string file
         running: file !== ""
         interval: 1500
-        onTriggered: root.grabToImage(result => { result.saveToFile(file); Qt.quit() })
+        onTriggered: frame.grabToImage(result => { result.saveToFile(file); Qt.quit() })
     }
 
     // Stay running hidden: the next file shows up instantly instead of starting the app again
     onClosing: close => {
         close.accepted = false
+        if (visibility === Window.Windowed) {
+            settings.width = width
+            settings.height = height
+        }
+        if (visibility !== Window.FullScreen) // full screen keeps the size you had before
+            settings.maximized = visibility === Window.Maximized
         hide()
         peek.clear() // free the preview's memory while hidden
     }
@@ -85,6 +106,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Shift+C"; onActivated: { peek.copyPath(); win.note("path copied") } }
     Shortcut { sequence: "F2"; onActivated: renameDialog.open() }
     Shortcut { sequences: [StandardKey.Delete]; onActivated: win.trash() }
+    Shortcut { sequences: ["I", "C"]; onActivated: win.sideOpen = !win.sideOpen }
     Shortcut { sequence: "F11"; onActivated: win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen() }
 
     function trash() {
@@ -97,8 +119,12 @@ ApplicationWindow {
             win.note("“" + name + "” moved to the Trash")
     }
 
+    // Holds everything the window shows: the window's own content item can't be grabbed for --snapshot
+    Item { id: frame; anchors.fill: parent }
+
     ColumnLayout {
         id: root
+        parent: frame
         anchors.fill: parent
         spacing: 0
 
@@ -106,6 +132,7 @@ ApplicationWindow {
             id: previewArea
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.rightMargin: win.sideOpen ? sidePanel.width : 0
             clip: true
 
             Loader {
@@ -163,6 +190,67 @@ ApplicationWindow {
             }
         }
     }
+
+    SidePanel {
+        id: sidePanel
+        parent: frame
+        visible: win.sideOpen
+        anchors.right: parent.right
+        width: 330
+        height: previewArea.height
+        z: 2 // over the right-click area
+        topPadding: tray.height + 12 // below the panel button
+        source: peek.source
+        icon: peek.icon
+        picture: peek.kind === "image"
+    }
+    // Filled only while open: browsing with the panel closed reads nothing
+    Binding { target: sidePanel; property: "path"; value: peek.path; when: win.sideOpen; restoreMode: Binding.RestoreNone }
+
+    // The panel button floats in the top right corner, over the preview
+    Rectangle {
+        id: tray
+        parent: frame
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 6
+        z: 3
+        width: panelButton.implicitWidth + 6
+        height: panelButton.implicitHeight + 6
+        radius: 7
+        color: Qt.alpha(win.palette.button, 0.6)
+        border.color: Qt.alpha(win.palette.mid, 0.35)
+        ToolButton {
+            id: panelButton
+            anchors.centerIn: parent
+            icon.name: win.sideOpen ? "sidebar-collapse-right" : "sidebar-expand-right"
+            checked: win.sideOpen
+            focusPolicy: Qt.NoFocus
+            ToolTip.visible: hovered
+            ToolTip.text: "Details and tools (I)"
+            onClicked: win.sideOpen = !win.sideOpen
+        }
+    }
+
+    // Right-click anywhere: the file menu. Only the right button is taken; everything else reaches the preview.
+    MouseArea {
+        parent: frame
+        anchors.fill: root
+        z: 1
+        acceptedButtons: Qt.RightButton
+        onPressed: mouse => {
+            // a text field keeps its own menu (Cut, Copy, Paste)
+            for (let item = root, p = Qt.point(mouse.x, mouse.y), child; (child = item.childAt(p.x, p.y)); item = child) {
+                p = item.mapToItem(child, p.x, p.y)
+                if (child instanceof TextInput) {
+                    mouse.accepted = false
+                    return
+                }
+            }
+            fileMenu.popup()
+        }
+    }
+    FileMenu { id: fileMenu; win: win; peek: peek; view: preview.item; onRenameRequested: renameDialog.open() }
 
     component NavArrow: AbstractButton {
         property string iconName

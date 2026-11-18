@@ -102,7 +102,7 @@ pub struct PeekRust {
     index: usize,
 }
 
-const ARCHIVES: &[&str] = &[
+pub(crate) const ARCHIVES: &[&str] = &[
     "application/zip", "application/x-tar", "application/x-compressed-tar", "application/x-bzip2-compressed-tar",
     "application/x-bzip-compressed-tar", "application/x-xz-compressed-tar", "application/x-zstd-compressed-tar",
     "application/x-lzma-compressed-tar", "application/x-7z-compressed", "application/vnd.rar", "application/x-rar",
