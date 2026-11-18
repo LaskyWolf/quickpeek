@@ -171,7 +171,7 @@ quit_running
 rm -rf "$OLD_APP" "$OLD_VENV"
 install -Dm755 "$work/target/release/quickpeek" "$BIN/quickpeek"
 install -Dm755 "$work/target/release/quickpeek-window" "$BIN/quickpeek-window"
-install -Dm755 "$work/src/quickpeek-desktop.py" "$BIN/quickpeek-desktop"
+install -Dm755 "$work/target/release/quickpeek-desktop" "$BIN/quickpeek-desktop"
 # Dolphin's right-click entry, with the full path: Dolphin's PATH may lack ~/.local/bin.
 # Plasma 6 only loads executable service menus from the home folder.
 mkdir -p "$MENU" "$APPS" "$ICONS"
@@ -187,7 +187,7 @@ case ":$PATH:" in *":$BIN:"*) ;; *) echo "Add $BIN to your PATH to run 'quickpee
 cat <<EOF
 
 Open a file: right-click it in Dolphin → Quick Preview, or run: quickpeek FILE
-Space on desktop icons (optional, needs python3):  quickpeek-desktop install && systemctl --user restart plasma-plasmashell
+Space on desktop icons (optional):  quickpeek-desktop install && systemctl --user restart plasma-plasmashell
 More previews, if you install them with your package manager: ffmpeg (video, audio), poppler (PDF
 details), 7zip (archives), assimp, blender, krita, onlyoffice (Office files and presentations).
 Update: run the same curl command again.

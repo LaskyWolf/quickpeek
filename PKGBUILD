@@ -12,7 +12,6 @@ depends=(qt6-base qt6-declarative qt6-multimedia qt6-quick3d qt6-webengine qt6-s
 optdepends=(
   'onnxruntime-cpu: AI tools (subject picking, finding text in images)'
   'kimageformats: PSD, XCF, AVIF, HEIF and other picture formats'
-  'python: Space on desktop icons (quickpeek-desktop)'
   'ffmpeg: video thumbnails, conversions and audio waveforms'
   'onlyoffice-bin: Word, Excel, PowerPoint and OpenDocument pages, presentations with Morph (AUR)'
   'assimp: converting 3D models to other formats'
@@ -25,8 +24,8 @@ optdepends=(
   'plasma-workspace: set as wallpaper'
   'dolphin: show in folder'
 )
-source=(quickpeek-desktop.py quickpeek.desktop quickpeek-app.desktop quickpeek.svg)
-sha256sums=(SKIP SKIP SKIP SKIP)
+source=(quickpeek.desktop quickpeek-app.desktop quickpeek.svg)
+sha256sums=(SKIP SKIP SKIP)
 
 build() {
   cd "$startdir"
@@ -36,7 +35,7 @@ build() {
 package() {
   install -Dm755 "$srcdir/target/release/quickpeek" "$pkgdir/usr/bin/quickpeek"
   install -Dm755 "$srcdir/target/release/quickpeek-window" "$pkgdir/usr/bin/quickpeek-window"
-  install -Dm755 quickpeek-desktop.py "$pkgdir/usr/bin/quickpeek-desktop"
+  install -Dm755 "$srcdir/target/release/quickpeek-desktop" "$pkgdir/usr/bin/quickpeek-desktop"
   install -Dm644 quickpeek.desktop "$pkgdir/usr/share/kio/servicemenus/quickpeek.desktop"
   install -Dm644 quickpeek-app.desktop "$pkgdir/usr/share/applications/quickpeek.desktop"
   install -Dm644 quickpeek.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/quickpeek.svg"

@@ -1,7 +1,6 @@
 /src/
 /pkg/
 *.pkg.tar.*
-__pycache__/
 samples/
 /target
 .qmlls.ini

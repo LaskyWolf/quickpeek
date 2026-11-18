@@ -8,3 +8,7 @@ license = "GPL-3.0-or-later"
 [[bin]]
 name = "quickpeek"
 path = "../rust/main.rs"
+
+[[bin]]
+name = "quickpeek-desktop"
+path = "../rust/desktop_patch.rs"

@@ -77,7 +77,7 @@ Both ways install `quickpeek`, `quickpeek-window`, `quickpeek-desktop`, the "Qui
 
 Some previews use other programs when they are installed: ffmpeg (video and audio), poppler (PDF details), 7zip (more archive formats), assimp and blender (3D models), krita, onlyoffice (Office files and presentations). See `optdepends` in `PKGBUILD` for the full list.
 
-To make Space open quickpeek on desktop icons (needs `python3`):
+To make Space open quickpeek on desktop icons and in Folder View widgets:
 
 ```bash
 quickpeek-desktop install
@@ -101,7 +101,7 @@ rust/                 the app: `main.rs` is the `quickpeek` launcher, `window.rs
 qml/                  the screens, one file per previewer
 cpp/                  small C++ helpers for Qt APIs
 launcher/             Cargo package of the `quickpeek` launcher
-quickpeek-desktop.py  makes Space work on Plasma desktop icons
+rust/desktop_patch.rs `quickpeek-desktop`: Space on Plasma desktop icons
 quickpeek.desktop     Dolphin right-click entry
 quickpeek-app.desktop application menu entry
 quickpeek.svg         icon

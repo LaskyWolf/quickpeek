@@ -12,7 +12,7 @@ QuickPeek is Rust + QML (cxx-qt 0.10, Qt 6). Two binaries:
 - `rust/` Rust sources. `rust/app.rs` is the window's backend object; `rust/files.rs` lists folders in Dolphin's order.
 - `qml/` the screens. `Main.qml` is the window; each previewer is one `qml/<Kind>View.qml`.
 - `cpp/` small C++ helpers for Qt APIs cxx-qt-lib doesn't wrap (QMimeDatabase, QCollator, QtDBus).
-- Previews follow the "load the cheap thing first, swap in the full thing" pattern of the Python app.
+- Previews follow the "load the cheap thing first, swap in the full thing" pattern.
 
 ## Checklist
 
@@ -45,12 +45,11 @@ Previewers
 - [x] PostScript (ghostscript)
 
 Tools
-- [x] PDF editor: pressure pen, text boxes, arrows, highlighter, save annotations (the Python app has no signing)
+- [x] PDF editor: pressure pen, text boxes, arrows, highlighter, save annotations
 - [x] File conversions (ffmpeg, assimp, x2t, images)
 - [x] AI: one runtime (`ort`) and one downloader for subject cut-out (SAM2), background matte, OCR (PaddleOCR)
 - [x] Image enlarging (waifu2x)
 
 Release
-- [x] Rust app is the default, `quickpeek.py` and its tests deleted
 - [x] `install.sh` builds from source
 - [x] README updated
