@@ -106,7 +106,7 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
-        Layout.rightMargin: 44 // room for the floating side-panel button
+        Layout.rightMargin: 52 // room for the floating side-panel button
         Layout.margins: 4
         Layout.leftMargin: 12
         Layout.minimumHeight: 32

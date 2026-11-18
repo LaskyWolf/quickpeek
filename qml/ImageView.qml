@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // A picture, fitted to the window. Wheel zooms around the pointer, dragging pans, double-click fits again.
+// Ctrl+L / Ctrl+R turn the view (never the file), like Gwenview.
 // The toolbar's AI tools: Subject (S) picks what to keep and copies or saves it cut out; Text (T) finds the
 // lines of text, click one to see and copy its paragraph.
 import QtQuick
@@ -16,12 +17,15 @@ ColumnLayout {
     readonly property var lines: tools.lines ? JSON.parse(tools.lines) : []
     readonly property bool ai: tools.available()
     readonly property bool picked: tools.overlay > 0
+    property real turn // degrees the view is turned, counted up or down so each turn animates the short way
+    readonly property bool sideways: Math.abs(turn % 180) === 90
     spacing: 0
 
     ImageTools { id: tools }
 
     onSourceChanged: {
         flick.zoom = 0
+        turn = 0 // every picture starts upright
         mode = ""
         tools.reset()
     }
@@ -61,6 +65,8 @@ ColumnLayout {
 
     Shortcut { sequences: ["+", "="]; onActivated: flick.zoomAt(1.25, flick.width / 2, flick.height / 2) }
     Shortcut { sequence: "-"; onActivated: flick.zoomAt(1 / 1.25, flick.width / 2, flick.height / 2) }
+    Shortcut { sequence: "Ctrl+L"; onActivated: view.turn -= 90 }
+    Shortcut { sequence: "Ctrl+R"; onActivated: view.turn += 90 }
     Shortcut { sequence: "1"; onActivated: flick.zoom = 1 }
     Shortcut { sequence: "0"; onActivated: flick.zoom = 0 }
     Shortcut { sequence: "S"; enabled: subjectButton.enabled; onActivated: view.toggle("subject") }
@@ -69,7 +75,7 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
-        Layout.rightMargin: 44 // room for the floating side-panel button
+        Layout.rightMargin: 52 // room for the floating side-panel button
         Layout.margins: 4
         Layout.leftMargin: 12
         spacing: 2
@@ -125,15 +131,44 @@ ColumnLayout {
             checked: view.mode === "text"
             onClicked: view.toggle("text")
         }
-        Tool { name: "zoom-out"; tip: "Zoom out (-)"; onClicked: flick.zoomAt(1 / 1.25, flick.width / 2, flick.height / 2) }
-        Label {
-            text: Math.round(flick.scale * 100) + "%"
-            horizontalAlignment: Text.AlignHCenter
-            Layout.minimumWidth: 44
+        Item { implicitWidth: 6 } // a gap between the AI tools and the view controls
+        Tool { name: "object-rotate-left"; tip: "Turn left (Ctrl+L)"; onClicked: view.turn -= 90 }
+        Tool { name: "object-rotate-right"; tip: "Turn right (Ctrl+R)"; onClicked: view.turn += 90 }
+
+        // Zoom as one block: [ − | 100% | + ]. The percentage switches between fitting the window and actual size.
+        Rectangle {
+            implicitWidth: zoomRow.implicitWidth + 2
+            implicitHeight: zoomRow.implicitHeight + 2
+            radius: 5
+            color: "transparent"
+            border.color: Qt.alpha(palette.windowText, 0.2)
+            RowLayout {
+                id: zoomRow
+                anchors.centerIn: parent
+                spacing: 0
+                Tool { name: "list-remove"; tip: "Zoom out (-)"; onClicked: flick.zoomAt(1 / 1.25, flick.width / 2, flick.height / 2) }
+                Divider {}
+                ToolButton {
+                    implicitWidth: 58 // room for "3200%": the block keeps its size while you zoom
+                    text: Math.round(flick.scale * 100) + "%"
+                    font.features: { "tnum": 1 } // digits of equal width: the number doesn't wobble
+                    focusPolicy: Qt.NoFocus
+                    ToolTip.visible: hovered
+                    ToolTip.text: flick.zoom === 0 ? "Actual size (1)" : "Fit window (0)"
+                    onClicked: flick.zoom = flick.zoom === 0 ? 1 : 0
+                }
+                Divider {}
+                Tool { name: "list-add"; tip: "Zoom in (+)"; onClicked: flick.zoomAt(1.25, flick.width / 2, flick.height / 2) }
+            }
         }
-        Tool { name: "zoom-in"; tip: "Zoom in (+)"; onClicked: flick.zoomAt(1.25, flick.width / 2, flick.height / 2) }
-        Tool { name: "zoom-original"; tip: "Actual size (1)"; checked: flick.zoom === 1; onClicked: flick.zoom = 1 }
-        Tool { name: "zoom-fit-best"; tip: "Fit window (0)"; checked: flick.zoom === 0; onClicked: flick.zoom = 0 }
+    }
+
+    component Divider: Rectangle {
+        implicitWidth: 1
+        Layout.fillHeight: true
+        Layout.topMargin: 6
+        Layout.bottomMargin: 6
+        color: Qt.alpha(palette.windowText, 0.2)
     }
 
     Flickable {
@@ -142,12 +177,15 @@ ColumnLayout {
         Layout.fillHeight: true
         clip: true
         property real zoom: 0 // 0 = fit to the window
-        readonly property real fitScale: image.implicitWidth > 0
-            ? Math.min(1, width / image.implicitWidth, height / image.implicitHeight) : 1 // small pictures stay 1:1
+        // the picture's size as shown: width and height swap when it's turned sideways
+        readonly property real shownWidth: view.sideways ? image.implicitHeight : image.implicitWidth
+        readonly property real shownHeight: view.sideways ? image.implicitWidth : image.implicitHeight
+        readonly property real fitScale: shownWidth > 0
+            ? Math.min(1, width / shownWidth, height / shownHeight) : 1 // small pictures stay 1:1
         readonly property real scale: zoom || fitScale
 
-        contentWidth: Math.max(width, image.implicitWidth * scale)
-        contentHeight: Math.max(height, image.implicitHeight * scale)
+        contentWidth: Math.max(width, shownWidth * scale)
+        contentHeight: Math.max(height, shownHeight * scale)
         boundsBehavior: Flickable.StopAtBounds
         interactive: zoom > 0
 
@@ -161,6 +199,8 @@ ColumnLayout {
             height: implicitHeight * flick.scale
             x: (flick.contentWidth - width) / 2
             y: (flick.contentHeight - height) / 2
+            rotation: view.turn // around its centre, which stays in the middle of the content
+            Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
             // The picked subject: everything else dimmed, the subject outlined
             Image {
@@ -211,11 +251,12 @@ ColumnLayout {
         function zoomAt(factor, px, py) {
             const old = scale
             const next = Math.max(fitScale / 4, Math.min(32, old * factor))
-            // Keep the point under the pointer still
-            const cx = (contentX + px - image.x) / old, cy = (contentY + py - image.y) / old
+            // Keep the point under the pointer still: its distance from the picture's centre grows with the zoom,
+            // whichever way the picture is turned
+            const dx = (contentX + px - contentWidth / 2) * next / old, dy = (contentY + py - contentHeight / 2) * next / old
             zoom = next
-            contentX = Math.max(0, Math.min(contentWidth - width, cx * next + image.x - px))
-            contentY = Math.max(0, Math.min(contentHeight - height, cy * next + image.y - py))
+            contentX = Math.max(0, Math.min(contentWidth - width, contentWidth / 2 + dx - px))
+            contentY = Math.max(0, Math.min(contentHeight - height, contentHeight / 2 + dy - py))
         }
 
         WheelHandler {
@@ -260,10 +301,12 @@ ColumnLayout {
             const right = Math.max(...boxes.map(l => l.x + l.w)), bottom = Math.max(...boxes.map(l => l.y + l.h))
             return Qt.rect(left, top, right - left, bottom - top)
         }
-        // the paragraph's corners in the visible part of the picture
-        readonly property real textLeft: image.x + rect.x * flick.scale - flick.contentX
-        readonly property real textTop: image.y + rect.y * flick.scale - flick.contentY
-        readonly property real textBottom: textTop + rect.height * flick.scale
+        // the paragraph's box in the visible part of the picture, turned with it (the unused reads keep it up to date)
+        readonly property rect shown: flick.contentX + flick.contentY + flick.scale + image.rotation >= -Infinity
+            ? image.mapToItem(flick, rect.x, rect.y, rect.width, rect.height) : Qt.rect(0, 0, 0, 0)
+        readonly property real textLeft: shown.x
+        readonly property real textTop: shown.y
+        readonly property real textBottom: shown.y + shown.height
         x: Math.max(8, Math.min(flick.width - width - 8, textLeft))
         y: textBottom + height + 16 < flick.height ? textBottom + 8 : Math.max(8, textTop - height - 8) // below it, else above
         width: Math.min(440, flick.width - 16)
