@@ -76,6 +76,7 @@ Control {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 10
+        anchors.topMargin: 50 // below the floating side-panel button
         anchors.rightMargin: 12 + (flick.ScrollBar.vertical.visible ? flick.ScrollBar.vertical.width : 0)
         padding: 4
         visible: false

@@ -44,7 +44,7 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         Layout.leftMargin: 8
-        Layout.rightMargin: 8
+        Layout.rightMargin: 44 // room for the floating side-panel button
         spacing: 12
         opacity: 0.7
         Label { text: "Name"; Layout.fillWidth: true; leftPadding: 22 }

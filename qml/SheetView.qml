@@ -22,6 +22,7 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
+        Layout.rightMargin: 44 // room for the floating side-panel button
         Layout.margins: 6
         spacing: 6
 
