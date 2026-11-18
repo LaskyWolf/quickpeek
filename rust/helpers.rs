@@ -56,6 +56,15 @@ pub mod ffi {
         fn locale_integer(value: i64) -> String;
         /// `image://pdfpage/PAGE/PATH/REVISION` (PATH percent-encoded): a PDF page with its annotations, which QtPdf's QML views leave out.
         fn add_pdf_pages(engine: Pin<&mut QQmlApplicationEngine>);
+        /// Upright like ImageView shows it, 0xAARRGGBB not premultiplied; no pixels when Qt can't read it. Worker threads too.
+        fn read_image(path: &str) -> Pixels;
+        /// Smoothly resized, 0xAARRGGBB in and out.
+        fn scale_pixels(width: i32, height: i32, pixels: &[u32], to_width: i32, to_height: i32) -> Pixels;
+        /// Premultiplied 0xAARRGGBB pixels to the clipboard. Qt thread only.
+        fn copy_image(width: i32, height: i32, pixels: &[u32]);
+        /// Premultiplied pixels served as `image://aioverlay/ANYTHING`.
+        fn set_ai_overlay(width: i32, height: i32, pixels: &[u32]);
+        fn add_ai_overlay(engine: Pin<&mut QQmlApplicationEngine>);
     }
 
     /// A rendered page: 0xffRRGGBB pixels, row by row.

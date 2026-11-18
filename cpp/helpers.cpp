@@ -327,3 +327,71 @@ void add_pdf_pages(QQmlApplicationEngine &engine)
 {
     engine.addImageProvider(QStringLiteral("pdfpage"), new PdfPageProvider);
 }
+
+// AI tools on pictures (rust/ai.rs)
+namespace {
+Pixels to_pixels(const QImage &source)
+{
+    const QImage image = source.convertToFormat(QImage::Format_ARGB32);
+    Pixels pixels{image.width(), image.height(), {}};
+    pixels.data.reserve(size_t(image.width()) * image.height());
+    for (int y = 0; y < image.height(); ++y) {
+        const auto *line = reinterpret_cast<const std::uint32_t *>(image.constScanLine(y));
+        for (int x = 0; x < image.width(); ++x)
+            pixels.data.push_back(line[x]);
+    }
+    return pixels;
+}
+
+QImage wrap(std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels, QImage::Format format)
+{
+    if (pixels.size() != size_t(width) * height)
+        return {};
+    return QImage(reinterpret_cast<const uchar *>(pixels.data()), width, height, width * 4, format);
+}
+
+QMutex overlay_mutex;
+QImage overlay; // the picked subject's dimming and outline, shown by ImageView as image://aioverlay/REVISION
+
+class OverlayProvider : public QQuickImageProvider
+{
+public:
+    OverlayProvider() : QQuickImageProvider(QQuickImageProvider::Image) {}
+    QImage requestImage(const QString &, QSize *size, const QSize &) override
+    {
+        QMutexLocker lock(&overlay_mutex);
+        *size = overlay.size();
+        return overlay;
+    }
+};
+}
+
+// Upright, as ImageView shows it; 0xAARRGGBB, not premultiplied. Safe on worker threads.
+Pixels read_image(rust::Str path)
+{
+    QImageReader reader(q(path));
+    reader.setAutoTransform(true);
+    return to_pixels(reader.read());
+}
+
+Pixels scale_pixels(std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels, std::int32_t to_width, std::int32_t to_height)
+{
+    return to_pixels(wrap(width, height, pixels, QImage::Format_ARGB32).scaled(to_width, to_height, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+}
+
+void copy_image(std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels)
+{
+    QApplication::clipboard()->setImage(wrap(width, height, pixels, QImage::Format_ARGB32_Premultiplied).copy());
+}
+
+void set_ai_overlay(std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels)
+{
+    const QImage image = wrap(width, height, pixels, QImage::Format_ARGB32_Premultiplied).copy();
+    QMutexLocker lock(&overlay_mutex);
+    overlay = image;
+}
+
+void add_ai_overlay(QQmlApplicationEngine &engine)
+{
+    engine.addImageProvider(QStringLiteral("aioverlay"), new OverlayProvider);
+}

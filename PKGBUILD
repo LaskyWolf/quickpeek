@@ -11,6 +11,7 @@ depends=(python pyside6 qt6-declarative qt6-multimedia qt6-quick3d qqc2-desktop-
 optdepends=(
   'python-pymupdf: PDF editor'
   'python-numpy: subject picking and finding text in images'
+  'onnxruntime-cpu: AI tools in the new window (subject picking, finding text in images)'
   'python-onnxruntime-cpu: AI tools (subject picking, finding text in images)'
   'python-scipy: cleaner subject cut-outs, finding text in images'
   'python-pillow: more image formats'
