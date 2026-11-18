@@ -34,7 +34,7 @@ Shell
 Previewers
 - [x] Images: zoom/pan, animated GIF/WebP, SVG, preload neighbours
 - [x] Images: Krita/ORA/XCF/PSD/Clip, Blender/Revit/Affinity previews, thumbnails of other files
-- [ ] Images: AI tools toolbar
+- [x] Images: AI tools toolbar
 - [x] Plain text
 - [x] Code highlighting, Markdown/HTML, search popup (Ctrl+F)
 - [x] Folders, archives (libarchive, 7z)
@@ -50,7 +50,7 @@ Previewers
 Tools
 - [x] PDF editor: pressure pen, text boxes, arrows, highlighter, save annotations (the Python app has no signing)
 - [x] File conversions (ffmpeg, assimp, x2t, images)
-- [ ] AI: one runtime (`ort`) and one downloader for subject cut-out (SAM2), background matte, OCR (PaddleOCR)
+- [x] AI: one runtime (`ort`) and one downloader for subject cut-out (SAM2), background matte, OCR (PaddleOCR)
 - [x] Image enlarging (waifu2x)
 
 Release

@@ -2,6 +2,7 @@
 //! KDEQuickPeek window. It stays running hidden after you close it, waiting for the next file
 //! from the `quickpeek` launcher. A separate program, so the launcher never loads Qt.
 
+mod ai;
 mod app;
 mod browse;
 mod embedded;
@@ -27,6 +28,7 @@ fn main() {
     if let Some(mut engine) = engine.as_mut() {
         helpers::block_network(engine.as_mut());
         helpers::add_pdf_pages(engine.as_mut());
+        helpers::add_ai_overlay(engine.as_mut());
         engine.load(&QUrl::from("qrc:/qt/qml/com/quickpeek/qml/Main.qml"));
     }
     // Exit without tearing anything down: worker threads (ffmpeg's decoders too) may still be running,

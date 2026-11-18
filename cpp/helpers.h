@@ -43,3 +43,8 @@ bool image_animated(rust::Str path);
 rust::String convert_image(rust::Str src, rust::Str dst);
 bool text_to_document(rust::Str src, rust::Str dst, rust::Str mime);
 rust::String markdown_to_html(rust::Str text);
+Pixels read_image(rust::Str path);
+Pixels scale_pixels(std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels, std::int32_t to_width, std::int32_t to_height);
+void copy_image(std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels);
+void set_ai_overlay(std::int32_t width, std::int32_t height, rust::Slice<const std::uint32_t> pixels);
+void add_ai_overlay(QQmlApplicationEngine &engine);
