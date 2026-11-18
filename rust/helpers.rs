@@ -56,6 +56,13 @@ pub mod ffi {
         fn locale_integer(value: i64) -> String;
         /// `image://pdfpage/PAGE/PATH/REVISION` (PATH percent-encoded): a PDF page with its annotations, which QtPdf's QML views leave out.
         fn add_pdf_pages(engine: Pin<&mut QQmlApplicationEngine>);
+        /// Image formats Qt can save ("png", "jpeg"…).
+        fn writable_image_formats() -> Vec<String>;
+        fn image_animated(path: &str) -> bool;
+        /// Saves the picture at `src` as `dst` (any Qt format, or a one-page PDF). The error, or empty. Safe on worker threads.
+        fn convert_image(src: &str, dst: &str) -> String;
+        /// Markdown, HTML or plain text to a PDF or HTML file with Qt's text engine. Qt thread only.
+        fn text_to_document(src: &str, dst: &str, mime: &str) -> bool;
     }
 
     /// A rendered page: 0xffRRGGBB pixels, row by row.

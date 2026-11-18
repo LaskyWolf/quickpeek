@@ -41,7 +41,7 @@ pub mod qobject {
 use qobject::Model;
 
 /// Files Qt's assimp importer reads, plus .blend through Blender.
-const MODELS: &[&str] = &["glb", "gltf", "obj", "fbx", "stl", "ply", "dae", "3ds"];
+pub(crate) const MODELS: &[&str] = &["glb", "gltf", "obj", "fbx", "stl", "ply", "dae", "3ds"];
 
 #[derive(Default)]
 pub struct ModelRust {
@@ -86,7 +86,7 @@ fn run(mut command: Command, alive: &dyn Fn() -> bool) -> bool {
     }
 }
 
-fn blender_command() -> Option<Vec<String>> {
+pub(crate) fn blender_command() -> Option<Vec<String>> {
     let path = std::env::var_os("PATH").unwrap_or_default();
     if let Some(blender) = std::env::split_paths(&path).map(|dir| dir.join("blender")).find(|p| p.is_file()) {
         return Some(vec![blender.to_string_lossy().into_owned()]);
@@ -99,7 +99,7 @@ fn blender_command() -> Option<Vec<String>> {
 }
 
 /// Blender's glTF export of a .blend, cached. Err is the note to show instead.
-fn blend_to_glb(path: &Path, alive: &dyn Fn() -> bool, say: &dyn Fn(&str)) -> Result<PathBuf, &'static str> {
+pub(crate) fn blend_to_glb(path: &Path, alive: &dyn Fn() -> bool, say: &dyn Fn(&str)) -> Result<PathBuf, &'static str> {
     let key = convert::cache_key(path).ok_or("Can't read this file")?;
     let out = convert::cache_dir().join(format!("{key}.glb"));
     if out.exists() {

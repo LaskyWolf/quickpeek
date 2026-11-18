@@ -10,7 +10,7 @@ Until every item below is ported, both apps ship:
 
 ## Layout
 
-- `quickpeek-window FILE --snapshot=OUT.png` saves the window after 1.5 s and quits: run it with `QT_QPA_PLATFORM=offscreen` to check a screen without opening a window.
+- `quickpeek-window FILE --snapshot=OUT.png` saves the window after 1.5 s and quits (add `--side` to open the side panel): run it with `QT_QPA_PLATFORM=offscreen` to check a screen without opening a window.
 
 - `rust/` Rust sources. `rust/app.rs` is the window's backend object; `rust/files.rs` lists folders in Dolphin's order.
 - `qml/` the screens. `Main.qml` is the window; each previewer is one `qml/<Kind>View.qml`.
@@ -28,7 +28,7 @@ Shell
 - [x] Previous/next arrows on the preview edges
 - [x] Right-click menu: Open, Open With, Show in Folder, Copy, Copy Path, Rename, Trash, Wallpaper, Full Screen
 - [x] Window size and volume remembered
-- [x] Side panel: file details per type (tools page still empty)
+- [x] Side panel: file details per type, tools page
 - [ ] Cache folder, pruning, `move_old_files` (drop)
 
 Previewers
@@ -49,9 +49,9 @@ Previewers
 
 Tools
 - [x] PDF editor: pressure pen, text boxes, arrows, highlighter, save annotations (the Python app has no signing)
-- [ ] File conversions (ffmpeg, assimp, x2t, images)
+- [x] File conversions (ffmpeg, assimp, x2t, images)
 - [ ] AI: one runtime (`ort`) and one downloader for subject cut-out (SAM2), background matte, OCR (PaddleOCR)
-- [ ] Image enlarging (waifu2x)
+- [x] Image enlarging (waifu2x)
 
 Release
 - [ ] Rust app is the default, `quickpeek.py` and its tests deleted

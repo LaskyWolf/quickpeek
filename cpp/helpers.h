@@ -38,3 +38,7 @@ ImageHeader image_header(rust::Str path);
 rust::Vec<rust::String> mime_ancestors(rust::Str path);
 rust::String locale_integer(std::int64_t value);
 void add_pdf_pages(QQmlApplicationEngine &engine);
+rust::Vec<rust::String> writable_image_formats();
+bool image_animated(rust::Str path);
+rust::String convert_image(rust::Str src, rust::Str dst);
+bool text_to_document(rust::Str src, rust::Str dst, rust::Str mime);
