@@ -11,6 +11,8 @@ import com.quickpeek
 ColumnLayout {
     id: view
     property alias source: image.source
+    // Why the picture can't be shown ("" when it can): the window says it in place of the preview
+    readonly property string failure: image.status === Image.Error ? "The picture is damaged or in a format that can't be read." : ""
     property string path // the file: the cut-out is saved next to it, the found text is cached by it
     property string mode // "", "subject" or "text": one click mode at a time
     property int block: -1 // the clicked paragraph of found text
@@ -189,7 +191,8 @@ ColumnLayout {
         boundsBehavior: Flickable.StopAtBounds
         interactive: zoom > 0
 
-        AnimatedImage { // also plays GIF, WebP and APNG animations
+        // A plain Image, not AnimatedImage: QMovie ignores EXIF rotation and reports a damaged file as ready
+        Image {
             id: image
             asynchronous: true
             autoTransform: true // photos taken sideways stand upright
@@ -201,6 +204,13 @@ ColumnLayout {
             y: (flick.contentHeight - height) / 2
             rotation: view.turn // around its centre, which stays in the middle of the content
             Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+            // GIF, WebP and APNG animations play on top of their first frame
+            AnimatedImage {
+                anchors.fill: parent
+                source: image.frameCount > 1 ? image.source : ""
+                smooth: true
+            }
 
             // The picked subject: everything else dimmed, the subject outlined
             Image {

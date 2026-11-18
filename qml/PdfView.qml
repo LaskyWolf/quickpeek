@@ -12,6 +12,7 @@ ColumnLayout {
     property string fit: "width" // "width", "page", or "" once you zoom by hand
     readonly property var found: reader.searchModel
     property bool editing
+    readonly property string failure: doc.status === PdfDocument.Error ? "The PDF is damaged or can't be read." : ""
     spacing: 0
 
     /// Swaps the reader for the drawing editor. False while it asks about unsaved drawings; `then` runs once

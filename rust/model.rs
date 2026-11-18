@@ -262,7 +262,14 @@ fn load(thread: cxx_qt::CxxQtThread<Model>, path: PathBuf, generation: Arc<Atomi
 
     let counts = counts(&stats_of);
     let stats = counts.iter().map(|(n, what)| format!("{} {what}", helpers::locale_number(*n as f64))).collect::<Vec<_>>().join("  ·  ");
-    send(Box::new(move |model| model.set_stats(QString::from(stats.as_str()))));
+    // Counted and nothing to draw: the view would stay empty without saying why
+    let empty = !counts.is_empty() && counts.iter().all(|(n, what)| *n == 0 || what.starts_with("animation"));
+    send(Box::new(move |mut model| {
+        model.as_mut().set_stats(QString::from(stats.as_str()));
+        if empty {
+            model.set_note(QString::from("This model has no shapes, or the file is damaged."));
+        }
+    }));
 
     // Only formats that can carry animations; glTF says in its header whether it does
     let animated = match suffix(&model).as_str() {

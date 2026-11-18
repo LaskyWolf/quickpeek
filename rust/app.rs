@@ -29,6 +29,8 @@ pub mod qobject {
         #[qproperty(QString, kind)]
         #[qproperty(QString, icon)]
         #[qproperty(QString, text)]
+        /// Why the file can't be read at all ("" when it can): the window says it instead of a preview
+        #[qproperty(QString, problem)]
         #[qproperty(i32, count)]
         #[qproperty(QUrl, previous)]
         #[qproperty(QUrl, next)]
@@ -100,6 +102,7 @@ pub struct PeekRust {
     kind: QString,
     icon: QString,
     text: QString,
+    problem: QString,
     count: i32,
     previous: QUrl,
     next: QUrl,
@@ -118,6 +121,18 @@ pub(crate) const ARCHIVES: &[&str] = &[
 
 fn escape(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// Why the file can't be opened for reading, or "" when it can.
+fn unreadable(path: &Path) -> String {
+    let opened = if path.is_dir() { std::fs::read_dir(path).map(drop) } else { std::fs::File::open(path).map(drop) };
+    match opened {
+        Ok(()) => String::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && path.is_symlink() => "This link points to a file that no longer exists.".into(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "This file no longer exists.".into(),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => "You don't have permission to read this file.".into(),
+        Err(e) => format!("This file can't be read: {e}."),
+    }
 }
 
 /// Which QML view shows the file.
@@ -176,7 +191,25 @@ fn read_text(path: &Path) -> String {
     if let Ok(file) = std::fs::File::open(path) {
         let _ = file.take(TEXT_LIMIT).read_to_end(&mut bytes);
     }
-    String::from_utf8_lossy(&bytes).into_owned()
+    decode(&bytes)
+}
+
+/// UTF-8, or Windows-1252 when the bytes aren't UTF-8: the usual encoding of older Windows text files.
+fn decode(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_string(),
+        // Only the last character is cut (the file was read up to TEXT_LIMIT): still UTF-8
+        Err(e) if e.error_len().is_none() => String::from_utf8_lossy(&bytes[..e.valid_up_to()]).into_owned(),
+        Err(_) => bytes.iter().map(|&b| windows_1252(b)).collect(),
+    }
+}
+
+fn windows_1252(b: u8) -> char {
+    const HIGH: &str = "€\u{81}‚ƒ„…†‡ˆ‰Š‹Œ\u{8d}Ž\u{8f}\u{90}‘’“”•–—˜™š›œ\u{9d}žŸ";
+    match b {
+        0x80..=0x9f => HIGH.chars().nth(usize::from(b - 0x80)).unwrap_or('\u{fffd}'),
+        _ => char::from(b), // the rest of Windows-1252 is Latin-1, the first 256 Unicode code points
+    }
 }
 
 fn url(path: &Path) -> QUrl {
@@ -221,7 +254,9 @@ impl qobject::Peek {
     }
 
     fn open(mut self: Pin<&mut Self>, path: &QString) {
-        let Ok(path) = PathBuf::from(path.to_string()).canonicalize() else { return };
+        let given = PathBuf::from(path.to_string());
+        // A broken link or a deleted file has no canonical path: keep it, show_file says what's wrong
+        let Ok(path) = given.canonicalize().or_else(|_| std::path::absolute(&given)) else { return };
         let files = files::siblings(&path);
         let index = files.iter().position(|p| *p == path).unwrap_or(0);
         let mut rust = self.as_mut().rust_mut();
@@ -251,11 +286,16 @@ impl qobject::Peek {
         let (previous, next) = (neighbour(count - 1), neighbour(1));
         let text = path.to_string_lossy();
         let mime = helpers::mime_info(&text);
-        let kind = kind_of(&path);
+        let problem = unreadable(&path);
+        let kind = if problem.is_empty() { kind_of(&path) } else { "other" };
         let details = self.bar_text(&path, &mime.comment);
         let icon = if mime.icon.is_empty() { mime.generic_icon } else { mime.icon };
 
-        // The view switches on `kind`, so the content it reads is set first
+        // The view switches on `kind`, so the content it reads is set first. A different kind of file unloads
+        // the old view before that: a video player handed a PDF would try to play it.
+        if self.kind().to_string() != kind {
+            self.as_mut().set_kind(QString::default());
+        }
         let content = match kind {
             "text" => read_text(&path),
             "markdown" => fit_images(&helpers::markdown_to_html(&read_text(&path))),
@@ -269,6 +309,7 @@ impl qobject::Peek {
         if kind == "image" && !direct {
             self.as_mut().load_picture(path.clone());
         }
+        self.as_mut().set_problem(QString::from(problem.as_str()));
         self.as_mut().set_path(QString::from(text.as_ref()));
         self.as_mut().set_details(QString::from(details.as_str()));
         self.as_mut().set_icon(QString::from(icon.as_str()));
@@ -386,5 +427,29 @@ impl qobject::Peek {
             String::new()
         };
         QString::from(error.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_utf8_and_windows_1252() {
+        assert_eq!(decode("café ✓".as_bytes()), "café ✓");
+        assert_eq!(decode(b"caf\xe9 \x80 \x93x\x94"), "café € “x”");
+        assert_eq!(decode(&"ab✓".as_bytes()[..4]), "ab"); // cut inside the last character
+    }
+
+    #[test]
+    fn says_why_a_file_cant_be_read() {
+        let dir = std::env::temp_dir().join(format!("qp-unreadable-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let link = dir.join("link");
+        let _ = std::os::unix::fs::symlink(dir.join("missing"), &link);
+        assert_eq!(unreadable(&link), "This link points to a file that no longer exists.");
+        assert_eq!(unreadable(&dir.join("gone")), "This file no longer exists.");
+        assert_eq!(unreadable(&dir), "");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

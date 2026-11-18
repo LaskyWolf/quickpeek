@@ -13,6 +13,7 @@ ColumnLayout {
     property url source
     property bool audio
     property string icon // shown for audio without cover art
+    readonly property string failure: player.error !== MediaPlayer.NoError ? "The file is damaged or in a format that can't be played." : ""
     readonly property bool playing: player.playbackState === MediaPlayer.PlayingState
     spacing: 0
 

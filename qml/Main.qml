@@ -169,6 +169,17 @@ ApplicationWindow {
                 explanation: "Select a file in Dolphin and press Space, or right-click it and choose Quick Preview."
             }
 
+            // A file that can't be read, or a preview that failed: say why instead of an empty view
+            Kirigami.PlaceholderMessage {
+                anchors.centerIn: parent
+                width: parent.width - Kirigami.Units.gridUnit * 4
+                readonly property string reason: peek.problem || (preview.item?.failure ?? "")
+                visible: reason !== ""
+                icon.name: peek.icon
+                text: "This file can't be previewed"
+                explanation: reason
+            }
+
             // Decoded ahead on worker threads, so flipping to the neighbours is instant
             Repeater {
                 model: [peek.previous, peek.next]
@@ -333,6 +344,7 @@ ApplicationWindow {
         Item {
             Kirigami.Icon {
                 anchors.centerIn: parent
+                visible: !peek.problem // the window's message shows the icon then
                 width: 128
                 height: 128
                 source: peek.icon
