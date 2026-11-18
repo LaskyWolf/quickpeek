@@ -49,6 +49,11 @@ pub mod qobject {
         #[qinvokable]
         fn activate(self: Pin<&mut Peek>, token: &QString);
 
+        /// Reads the shown file's size again for the bottom bar, after the view changed the file.
+        #[qinvokable]
+        #[cxx_name = "refreshDetails"]
+        fn refresh_details(self: Pin<&mut Peek>);
+
         /// Lets go of the preview's memory while the window is hidden.
         #[qinvokable]
         fn clear(self: Pin<&mut Peek>);
@@ -246,13 +251,8 @@ impl qobject::Peek {
         let (previous, next) = (neighbour(count - 1), neighbour(1));
         let text = path.to_string_lossy();
         let mime = helpers::mime_info(&text);
-        let size = match std::fs::metadata(&path) {
-            Ok(m) if m.is_file() => helpers::formatted_size(m.len()),
-            _ => String::new(),
-        };
-        let name = path.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
         let kind = kind_of(&path);
-        let details = format!("<b>{}</b><br>{}  {size}  ·  {}/{count}", escape(&name), escape(&mime.comment), index + 1);
+        let details = self.bar_text(&path, &mime.comment);
         let icon = if mime.icon.is_empty() { mime.generic_icon } else { mime.icon };
 
         // The view switches on `kind`, so the content it reads is set first
@@ -276,6 +276,23 @@ impl qobject::Peek {
         self.as_mut().set_previous(previous);
         self.as_mut().set_next(next);
         self.as_mut().set_kind(QString::from(kind));
+    }
+
+    /// "<b>name</b><br>type  size  ·  position/count" for the bottom bar.
+    fn bar_text(&self, path: &Path, comment: &str) -> String {
+        let size = match std::fs::metadata(path) {
+            Ok(m) if m.is_file() => helpers::formatted_size(m.len()),
+            _ => String::new(),
+        };
+        let name = path.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
+        let (index, count) = (self.rust().index, self.rust().files.len());
+        format!("<b>{}</b><br>{}  {size}  ·  {}/{count}", escape(&name), escape(comment), index + 1)
+    }
+
+    fn refresh_details(mut self: Pin<&mut Self>) {
+        let Some(path) = self.current().cloned() else { return };
+        let details = self.bar_text(&path, &helpers::mime_info(&path.to_string_lossy()).comment);
+        self.as_mut().set_details(QString::from(details.as_str()));
     }
 
     /// Extracts the preview on a worker thread: a .clip or .af can be hundreds of MB.

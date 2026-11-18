@@ -29,7 +29,7 @@ Shell
 - [x] Right-click menu: Open, Open With, Show in Folder, Copy, Copy Path, Rename, Trash, Wallpaper, Full Screen
 - [x] Window size and volume remembered
 - [x] Side panel: file details per type, tools page
-- [ ] Cache folder, pruning, `move_old_files` (drop)
+- [x] Cache folder and pruning (`rust/convert.rs`); `move_old_files` dropped
 
 Previewers
 - [x] Images: zoom/pan, animated GIF/WebP, SVG, preload neighbours

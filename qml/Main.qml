@@ -45,6 +45,13 @@ ApplicationWindow {
         }
     }
 
+    // The PDF editor may have saved into the file: its size changed
+    Connections {
+        target: preview.item
+        ignoreUnknownSignals: true
+        function onEditingChanged() { peek.refreshDetails() }
+    }
+
     function showAndRaise() {
         show()
         raise()
