@@ -1131,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "quickpeek"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "calamine",
  "csv",
@@ -1158,7 +1158,7 @@ dependencies = [
 
 [[package]]
 name = "quickpeek-launcher"
-version = "0.2.0"
+version = "1.0.0"
 
 [[package]]
 name = "quote"

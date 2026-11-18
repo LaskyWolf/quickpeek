@@ -1,6 +1,6 @@
 # Personal package for KDEQuickPeek. Build and install from this folder: makepkg -si
 pkgname=quickpeek
-pkgver=r95.687fcf7
+pkgver=1.0.0
 pkgrel=1
 pkgdesc="KDEQuickPeek: quick file previewer for KDE Plasma (Space to preview)"
 arch=(x86_64)
@@ -27,11 +27,6 @@ optdepends=(
 )
 source=(quickpeek-desktop.py quickpeek.desktop quickpeek-app.desktop quickpeek.svg)
 sha256sums=(SKIP SKIP SKIP SKIP)
-
-pkgver() {
-  cd "$startdir"
-  printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
-}
 
 build() {
   cd "$startdir"
