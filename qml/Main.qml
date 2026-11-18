@@ -17,7 +17,7 @@ ApplicationWindow {
     height: settings.height || Screen.desktopAvailableHeight * 0.7
     property bool sideOpen: false // the side panel; every new launch starts with it closed
 
-    // The size you left the window at; same file as the Python app, its own [window] group
+    // The size you left the window at, in the [window] group of quickpeek.conf
     Settings {
         id: settings
         location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/quickpeek/quickpeek.conf"

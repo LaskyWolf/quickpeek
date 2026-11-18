@@ -23,7 +23,7 @@ Pane {
     Tools { id: tools; path: details.path }
     Desktop { id: desktop }
 
-    // Python's details are one two-column table, so the label column lines up across sections
+    // The details are one two-column table, so the label column lines up across sections
     readonly property var cells: {
         if (!details.sections)
             return []

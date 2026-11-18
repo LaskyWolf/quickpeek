@@ -103,7 +103,7 @@ Control {
             if (delta === 0) {
                 matches = []
                 if (needle) {
-                    // Case-insensitive like the Python app; positions match the document's
+                    // Case-insensitive; positions match the document's
                     const pattern = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi")
                     const haystack = area.getText(0, area.length), found = []
                     for (let m; (m = pattern.exec(haystack));)

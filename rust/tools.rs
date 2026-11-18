@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Backend of the side panel's tools page: what the file can be converted into, and the conversion.
 //! Results land next to the original under a free name; nothing is ever overwritten.
-//! Conversions run on worker threads and are not cancelled when you flip to another file (as in Python):
+//! Conversions run on worker threads and are not cancelled when you flip to another file:
 //! the result is only dropped from the page.
 
 use crate::{convert, helpers, model};
@@ -136,7 +136,7 @@ fn free_path(folder: &Path, stem: &str, ext: &str) -> PathBuf {
     candidate
 }
 
-/// ".png", or "" without an extension, like Python's Path.suffix lowered.
+/// ".png", or "" without an extension, lowercase.
 fn suffix(path: &Path) -> String {
     path.extension().map_or(String::new(), |e| format!(".{}", e.to_string_lossy().to_lowercase()))
 }
@@ -187,7 +187,7 @@ fn ffmpeg_args(ext: &str) -> &'static [&'static str] {
 }
 
 /// Runs `command`; the error is the last line it printed.
-// ponytail: no timeout (Python had 30 min); a hung tool only keeps its worker thread busy
+// ponytail: no timeout; a hung tool only keeps its worker thread busy
 fn run(command: &mut Command) -> Result<(), String> {
     let out = command.stdin(Stdio::null()).output().map_err(|e| e.to_string())?;
     if out.status.success() {

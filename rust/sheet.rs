@@ -90,7 +90,7 @@ pub mod qobject {
 
 use qobject::SheetModel;
 
-// ponytail: hard cap like the Python app; a lazy model that reads rows on demand if it bites
+// ponytail: hard cap; a lazy model that reads rows on demand if it bites
 const MAX_ROWS: usize = 5000;
 const MAX_COLS: usize = 200;
 // Qt.UserRole (0x100) and up, in this order

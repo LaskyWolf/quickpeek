@@ -149,7 +149,7 @@ fn user_name(file: &str, id: u32) -> String {
         .map_or(id.to_string(), |f| f[0].to_string())
 }
 
-/// "-rw-r--r--", like `ls -l` and Python's stat.filemode.
+/// "-rw-r--r--", like `ls -l`.
 fn file_mode(mode: u32) -> String {
     let kind = match mode & 0o170000 {
         0o040000 => 'd',
@@ -176,7 +176,7 @@ fn file_mode(mode: u32) -> String {
 }
 
 fn run(program: &str, args: &[&OsStr]) -> String {
-    // ponytail: no timeout (Python had 15 s); a hung tool only keeps this worker busy
+    // ponytail: no timeout; a hung tool only keeps this worker busy
     Command::new(program).args(args).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default()
 }
 
@@ -188,7 +188,7 @@ fn read_head(path: &Path, limit: usize) -> Vec<u8> {
     data
 }
 
-/// 3 significant digits without trailing zeros, like Python's "{:.3g}" for frame rates.
+/// 3 significant digits without trailing zeros, like printf "%.3g", for frame rates.
 fn g3(value: f64) -> String {
     let digits = if value.abs() < 1.0 { 1 } else { value.abs().log10().floor() as i32 + 1 };
     let s = format!("{:.*}", (3 - digits).max(0) as usize, value);

@@ -61,7 +61,8 @@ bool can_read_image(rust::Str path) { return QImageReader(q(path)).canRead(); }
 
 int collate(rust::Str a, rust::Str b)
 {
-    static const QCollator collator = [] {
+    // One per thread: QCollator::compare is not thread-safe (tests sort on several threads at once)
+    thread_local const QCollator collator = [] {
         QCollator c;
         c.setNumericMode(true); // "img2" before "img10"
         c.setCaseSensitivity(Qt::CaseInsensitive);

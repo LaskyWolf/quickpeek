@@ -109,7 +109,7 @@ pub(crate) fn blend_to_glb(path: &Path, alive: &dyn Fn() -> bool, say: &dyn Fn(&
     let blender = blender_command().ok_or("Install Blender to see this model in 3D")?;
     let part = convert::cache_dir().join(format!("{key}.part.glb")); // renamed when done, so a killed export never looks finished
     let _ = std::fs::create_dir_all(convert::cache_dir()); // in the home folder: the Blender Flatpak can't see /tmp
-    // {:?} quotes the path as a Python string literal would for any normal file name
+    // {:?} quotes the path as a Python string literal (Blender runs Python) for any normal file name
     let script = format!("import bpy; bpy.ops.export_scene.gltf(filepath={:?}, export_format='GLB', export_apply=True)", part.to_string_lossy());
     say("Opening in Blender…");
     let mut command = Command::new(&blender[0]);

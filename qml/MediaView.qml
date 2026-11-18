@@ -25,7 +25,7 @@ ColumnLayout {
 
     SystemPalette { id: colors }
 
-    // Same file and key as the Python app, so the volume carries over
+    // Saved in ~/.config/quickpeek/quickpeek.conf, so the volume carries over
     Settings {
         id: settings
         location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/quickpeek/quickpeek.conf"

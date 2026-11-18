@@ -88,7 +88,7 @@ Menu {
     MenuSeparator {}
     Entry { iconName: "window-close"; text: "Close"; hint: "Space"; onTriggered: win.close() }
 
-    // A menu item with its key written on the right, like a QAction's shortcut in the Python app
+    // A menu item with its key written on the right, like a QAction's shortcut
     component Entry: MenuItem {
         id: entry
         property string iconName

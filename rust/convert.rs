@@ -26,7 +26,7 @@ fn home() -> PathBuf {
 }
 
 /// Changes whenever the file does, so an edited file is never shown from a stale cache.
-/// The same key as the Python app, so both share the cache.
+/// md5 of the path, size and modification time.
 pub fn cache_key(path: &Path) -> Option<String> {
     use std::os::unix::fs::MetadataExt;
     let meta = std::fs::metadata(path).ok()?;

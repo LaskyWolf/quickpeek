@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! AI tools on pictures: pick a subject (Segment Anything 2.1, outlines sharpened by BiRefNet / ToonOut)
 //! and find text (PaddleOCR). ONNX Runtime is loaded from the system at run time (onnxruntime-cpu);
-//! the models are downloaded once into the same folder as the Python app's.
+//! the models are downloaded once into ~/.local/share/quickpeek/models.
 
 use crate::helpers;
 use core::pin::Pin;
@@ -93,7 +93,7 @@ const SAM2_FILES: [&str; 2] = ["sam2.1_hiera_base_plus.encoder.onnx", "sam2.1_hi
 const OCR_SIDE: f64 = 1280.0; // longest side the text detector sees, in pixels
 const HINT: &str = "Click what to keep · Shift+click adds · Ctrl+click cuts away · Ctrl+Z undoes";
 
-/// Not in the cache: cleaning the cache must never delete these. Shared with the Python app.
+/// Not in the cache: cleaning the cache must never delete these.
 fn models_dir() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share/quickpeek/models")
 }
@@ -528,7 +528,7 @@ fn text_blocks(lines: &[Line]) -> Vec<usize> {
     of
 }
 
-/// Cached by file key, like the Python app's, so each picture is read once.
+/// Cached by file key, so each picture is read once.
 fn read_lines(picture: &str, path: &str, report: &dyn Fn(String)) -> Res<String> {
     let cached = crate::convert::cache_key(Path::new(path)).map(|key| crate::convert::cache_dir().join(format!("{key}.ocr5.json")));
     let from_cache = cached.as_ref().and_then(|c| std::fs::read_to_string(c).ok()).and_then(|text| {
@@ -789,7 +789,7 @@ fn sharpen(inside: &[bool], mut mask: Vec<f32>, edges: &[f32], w: usize, h: usiz
 }
 
 /// Premultiplied pixels over the picture: everything else dimmed, and a light outline around the subject.
-// ponytail: one image, no glow and no lift animation like the Python app's. Add a blurred copy of the outline if missed.
+// ponytail: one image, no glow and no lift animation. Add a blurred copy of the outline if missed.
 fn subject_layers(mask: &[f32], w: usize, h: usize) -> Vec<u32> {
     let inside: Vec<bool> = mask.iter().map(|v| *v > 0.5).collect();
     let shrunk = grow(&inside, w, h, ((w.max(h) as f32 / 450.0).round() as usize).max(2), true); // the outline grows with the picture
