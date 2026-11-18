@@ -31,7 +31,7 @@ pub fn cache_key(path: &Path) -> Option<String> {
     use std::os::unix::fs::MetadataExt;
     let meta = std::fs::metadata(path).ok()?;
     let nanos = meta.mtime() as i128 * 1_000_000_000 + meta.mtime_nsec() as i128;
-    Some(crate::helpers::md5_hex(&format!("{}:{nanos}:{}", path.display(), meta.size())))
+    Some(format!("{:x}", md5::compute(format!("{}:{nanos}:{}", path.display(), meta.size()))))
 }
 
 /// The running job. Dropping it kills the converter.
@@ -116,7 +116,8 @@ fn part_of(out: &Path) -> PathBuf {
     out.with_file_name(part)
 }
 
-fn touch(path: &Path) {
+/// Marks a cached file recently used, so pruning keeps it longer.
+pub fn touch(path: &Path) {
     if let Ok(file) = std::fs::File::open(path) {
         let _ = file.set_modified(SystemTime::now());
     }

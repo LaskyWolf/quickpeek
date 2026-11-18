@@ -115,7 +115,7 @@ fn postscript(path: &Path) -> Option<Vec<u8>> {
     (out.status.success() && out.stdout.starts_with(PNG)).then_some(out.stdout)
 }
 
-fn blend_thumbnail(path: &Path) -> Option<Vec<u8>> {
+pub fn blend_thumbnail(path: &Path) -> Option<Vec<u8>> {
     let mut file = File::open(path).ok()?;
     let mut head = [0u8; 4];
     file.read_exact(&mut head).ok()?;
@@ -137,7 +137,7 @@ fn blend_thumbnail(path: &Path) -> Option<Vec<u8>> {
 }
 
 /// Blender stores a thumbnail in a "TEST" block: width, height, then bottom-up RGBA pixels.
-fn blend_pixels(data: &[u8]) -> Option<(usize, usize, &[u8])> {
+pub fn blend_pixels(data: &[u8]) -> Option<(usize, usize, &[u8])> {
     if !data.starts_with(b"BLENDER") {
         return None;
     }

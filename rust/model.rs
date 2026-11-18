@@ -2,17 +2,16 @@
 //! 3D models for ModelView.qml: what Qt's RuntimeLoader reads, the counts for the toolbar, and on worker threads
 //! the slow parts: Blender turning a .blend into a .glb, and balsam making a QML scene that keeps the animations.
 
-use crate::helpers;
+use crate::{convert, embedded, helpers};
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QByteArrayBase64Options, QString, QUrl};
-use std::io::{BufRead, BufReader, Read};
-use std::os::unix::fs::MetadataExt;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -43,7 +42,6 @@ use qobject::Model;
 
 /// Files Qt's assimp importer reads, plus .blend through Blender.
 const MODELS: &[&str] = &["glb", "gltf", "obj", "fbx", "stl", "ply", "dae", "3ds"];
-const BLEND_HEAD: u64 = 4_000_000; // the .blend thumbnail sits near the start; never decompress a whole scene
 
 #[derive(Default)]
 pub struct ModelRust {
@@ -70,23 +68,6 @@ fn suffix(path: &Path) -> String {
 pub fn is_model(path: &Path) -> bool {
     let suffix = suffix(path);
     suffix == "blend" || MODELS.contains(&suffix.as_str())
-}
-
-// ponytail: cache folder, key and external-tool runner belong in the shared rust/convert.rs once it lands
-fn cache() -> PathBuf {
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache/quickpeek")
-}
-
-/// Same key as the Python app, so both share converted files. Changes whenever the file does.
-fn cache_key(path: &Path) -> Option<String> {
-    let m = std::fs::metadata(path).ok()?;
-    let mtime_ns = m.mtime() as i128 * 1_000_000_000 + m.mtime_nsec() as i128;
-    Some(helpers::md5_hex(&format!("{}:{mtime_ns}:{}", path.display(), m.size())))
-}
-
-/// Marks a cached file recently used, so the cache cleanup keeps it longer.
-fn touch(path: &Path) {
-    let _ = std::fs::File::options().append(true).open(path).and_then(|f| f.set_modified(SystemTime::now()));
 }
 
 /// Runs `command` to the end, or kills it once `alive` turns false. True if it succeeded.
@@ -119,15 +100,15 @@ fn blender_command() -> Option<Vec<String>> {
 
 /// Blender's glTF export of a .blend, cached. Err is the note to show instead.
 fn blend_to_glb(path: &Path, alive: &dyn Fn() -> bool, say: &dyn Fn(&str)) -> Result<PathBuf, &'static str> {
-    let key = cache_key(path).ok_or("Can't read this file")?;
-    let out = cache().join(format!("{key}.glb"));
+    let key = convert::cache_key(path).ok_or("Can't read this file")?;
+    let out = convert::cache_dir().join(format!("{key}.glb"));
     if out.exists() {
-        touch(&out);
+        convert::touch(&out);
         return Ok(out);
     }
     let blender = blender_command().ok_or("Install Blender to see this model in 3D")?;
-    let part = cache().join(format!("{key}.part.glb")); // renamed when done, so a killed export never looks finished
-    let _ = std::fs::create_dir_all(cache()); // in the home folder: the Blender Flatpak can't see /tmp
+    let part = convert::cache_dir().join(format!("{key}.part.glb")); // renamed when done, so a killed export never looks finished
+    let _ = std::fs::create_dir_all(convert::cache_dir()); // in the home folder: the Blender Flatpak can't see /tmp
     // {:?} quotes the path as a Python string literal would for any normal file name
     let script = format!("import bpy; bpy.ops.export_scene.gltf(filepath={:?}, export_format='GLB', export_apply=True)", part.to_string_lossy());
     say("Opening in Blender…");
@@ -143,10 +124,10 @@ fn blend_to_glb(path: &Path, alive: &dyn Fn() -> bool, say: &dyn Fn(&str)) -> Re
 /// balsam's QML version of a model, which keeps its animations, or None if it has none. Cached in <key>.scene/.
 fn animated_scene(path: &Path, alive: &dyn Fn() -> bool) -> Option<PathBuf> {
     let balsam = PathBuf::from(helpers::qt_binaries_dir()).join("balsam");
-    let key = cache_key(path)?;
-    let out = cache().join(format!("{key}.scene"));
+    let key = convert::cache_key(path)?;
+    let out = convert::cache_dir().join(format!("{key}.scene"));
     if !out.exists() && balsam.exists() {
-        let part = cache().join(format!("{key}.part.scene"));
+        let part = convert::cache_dir().join(format!("{key}.part.scene"));
         let _ = std::fs::remove_dir_all(&part);
         let mut command = Command::new(balsam);
         command.arg("-o").arg(&part).arg(path);
@@ -155,60 +136,9 @@ fn animated_scene(path: &Path, alive: &dyn Fn() -> bool) -> Option<PathBuf> {
             return None;
         }
     }
-    touch(&out);
+    convert::touch(&out);
     let qml = std::fs::read_dir(&out).ok()?.flatten().map(|e| e.path()).find(|p| suffix(p) == "qml")?;
     std::fs::read_to_string(&qml).ok()?.contains("Timeline {").then_some(qml)
-}
-
-/// Blender stores a thumbnail in a 'TEST' block: width, height, then bottom-up RGBA rows. `data` is the file's start.
-fn blend_thumbnail(data: &[u8]) -> Option<(i32, i32, &[u8])> {
-    if !data.starts_with(b"BLENDER") {
-        return None;
-    }
-    let int = |at: usize, little: bool| -> Option<i64> {
-        let b: [u8; 4] = data.get(at..at + 4)?.try_into().ok()?;
-        Some(if little { i32::from_le_bytes(b) } else { i32::from_be_bytes(b) } as i64)
-    };
-    let long = |at: usize| Some(i64::from_le_bytes(data.get(at..at + 8)?.try_into().ok()?));
-    // Blender 5.0+: "BLENDER17-01v0500", 32-byte block headers (code, sdna, old pointer, length, count).
-    // Older: "BLENDER-v405": '-' = 8-byte pointers, 'v' = little endian; code, length, old pointer, sdna, count.
-    let (mut pos, head, little, new) = if data.get(7..9) == Some(b"17") {
-        (17, 32, true, true)
-    } else {
-        let ptr = if data.get(7) == Some(&b'-') { 8 } else { 4 };
-        (12, 16 + ptr, data.get(8) == Some(&b'v'), false)
-    };
-    while pos + head <= data.len() {
-        let code = &data[pos..pos + 4];
-        let size = if new { long(pos + 16)? } else { int(pos + 4, little)? };
-        pos += head;
-        match code {
-            b"TEST" => {
-                let (w, h) = (int(pos, little)?, int(pos + 4, little)?);
-                let pixels = data.get(pos + 8..pos + 8 + usize::try_from(w * h * 4).ok()?)?;
-                return Some((w as i32, h as i32, pixels));
-            }
-            b"ENDB" => return None,
-            _ => pos += usize::try_from(size).ok()?,
-        }
-    }
-    None
-}
-
-/// The first BLEND_HEAD bytes of a .blend, unpacked if Blender compressed it.
-fn blend_head(path: &Path) -> Option<Vec<u8>> {
-    let mut file = std::fs::File::open(path).ok()?;
-    let mut magic = [0; 4];
-    file.read_exact(&mut magic).ok()?;
-    let file = std::io::Cursor::new(magic).chain(file);
-    let reader: Box<dyn Read> = match magic {
-        [0x28, 0xb5, 0x2f, 0xfd, ..] => Box::new(ruzstd::decoding::StreamingDecoder::new(file).ok()?), // zstd, Blender 3.0+
-        [0x1f, 0x8b, ..] => Box::new(flate2::read::GzDecoder::new(file)), // gzip, older Blender
-        _ => Box::new(file),
-    };
-    let mut data = Vec::new();
-    reader.take(BLEND_HEAD).read_to_end(&mut data).ok()?;
-    Some(data)
 }
 
 /// (count, what) for formats whose headers say so: vertices, triangles, materials...
@@ -314,11 +244,8 @@ fn load(thread: cxx_qt::CxxQtThread<Model>, path: PathBuf, generation: Arc<Atomi
     };
 
     let model = if suffix(&path) == "blend" {
-        if let Some((w, h, pixels)) = blend_head(&path).as_deref().and_then(blend_thumbnail) {
-            let png = helpers::rgba_bottom_up_png(pixels, w, h);
-            if !png.is_empty() {
-                send(Box::new(move |model| model.set_thumbnail(data_url(&png))));
-            }
+        if let Some(png) = embedded::blend_thumbnail(&path) {
+            send(Box::new(move |model| model.set_thumbnail(data_url(&png))));
         }
         match blend_to_glb(&path, &alive, &say) {
             Ok(glb) => glb,
@@ -403,23 +330,5 @@ mod tests {
         for name in ["a.obj", "b.stl", "c.stl", "d.ply", "e.gltf", "f.glb"] {
             let _ = std::fs::remove_file(scratch(name, b""));
         }
-    }
-
-    #[test]
-    fn finds_blend_thumbnail() {
-        let pixels = [7u8; 2 * 1 * 4];
-        // Pre-5.0 file, 8-byte pointers, little endian: a skipped block, then TEST
-        let mut old = b"BLENDER-v405".to_vec();
-        old.extend(b"REND"); old.extend(4i32.to_le_bytes()); old.extend([0; 8 + 4 + 4]); old.extend([1; 4]);
-        old.extend(b"TEST"); old.extend(16i32.to_le_bytes()); old.extend([0; 8 + 4 + 4]);
-        old.extend(2i32.to_le_bytes()); old.extend(1i32.to_le_bytes()); old.extend(pixels);
-        assert_eq!(blend_thumbnail(&old), Some((2, 1, &pixels[..])));
-        // 5.0+: 64-bit lengths at offset 16 of a 32-byte header
-        let mut new = b"BLENDER17-01v0500".to_vec();
-        new.extend(b"TEST"); new.extend([0; 12]); new.extend(16i64.to_le_bytes()); new.extend([0; 8]);
-        new.extend(2i32.to_le_bytes()); new.extend(1i32.to_le_bytes()); new.extend(pixels);
-        assert_eq!(blend_thumbnail(&new), Some((2, 1, &pixels[..])));
-        assert_eq!(blend_thumbnail(b"BLENDER-v405ENDB"), None);
-        assert_eq!(blend_thumbnail(b"not a blend"), None);
     }
 }
