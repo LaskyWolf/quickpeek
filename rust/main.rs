@@ -67,6 +67,14 @@ fn main() -> ExitCode {
     if let Some(message) = &message
         && send_to_running(message) {
             if message == "--quit" {
+                // Wait until the window is gone: a launch right after this one must start a new window,
+                // not hand its file to the one that is closing
+                for _ in 0..250 {
+                    if UnixStream::connect(socket::path()).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
                 println!("stopped");
             }
             return ExitCode::SUCCESS;
