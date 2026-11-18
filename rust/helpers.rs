@@ -46,6 +46,17 @@ pub mod ffi {
         fn thumbnail_key(path: &str) -> String;
         fn mime_icon_for_name(name: &str) -> String;
         fn local_time(secs: i64) -> String;
+
+        fn image_header(path: &str) -> ImageHeader;
+        fn mime_ancestors(path: &str) -> Vec<String>;
+        fn locale_integer(value: i64) -> String;
+    }
+
+    /// Picture size and format from the file header; width -1 when Qt can't read it.
+    struct ImageHeader {
+        width: i32,
+        height: i32,
+        format: String,
     }
 }
 

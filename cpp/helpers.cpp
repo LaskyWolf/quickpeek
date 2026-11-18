@@ -221,3 +221,24 @@ rust::String local_time(std::int64_t secs)
 {
     return r(QDateTime::fromSecsSinceEpoch(secs).toString(QStringLiteral("yyyy-MM-dd HH:mm")));
 }
+
+// Side panel and file menu
+ImageHeader image_header(rust::Str path)
+{
+    QImageReader reader(q(path)); // reads the header only, no decode
+    const QSize size = reader.size();
+    return ImageHeader{size.width(), size.height(), r(QString::fromLatin1(reader.format()).toUpper())};
+}
+
+// The type and every type it inherits: a .py file also opens in anything that takes text/plain
+rust::Vec<rust::String> mime_ancestors(rust::Str path)
+{
+    const QMimeType mime = QMimeDatabase().mimeTypeForFile(q(path));
+    rust::Vec<rust::String> out;
+    out.push_back(r(mime.name()));
+    for (const QString &name : mime.allAncestors())
+        out.push_back(r(name));
+    return out;
+}
+
+rust::String locale_integer(std::int64_t value) { return r(QLocale().toString(qlonglong(value))); }

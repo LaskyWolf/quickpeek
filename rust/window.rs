@@ -4,6 +4,8 @@
 
 mod app;
 mod browse;
+mod desktop;
+mod details;
 mod files;
 mod helpers;
 mod media;

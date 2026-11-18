@@ -37,6 +37,10 @@ Control {
         return true
     }
 
+    // For the right-click menu's Copy / Select All
+    readonly property bool hasSelection: area.selectedText !== ""
+    function selectAll() { area.selectAll() }
+
     contentItem: Flickable {
         id: flick
         boundsBehavior: Flickable.StopAtBounds
