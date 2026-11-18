@@ -52,5 +52,5 @@ Tools
 
 Release
 - [x] Rust app is the default, `quickpeek.py` and its tests deleted
-- [ ] `install.sh` downloads a prebuilt binary from the GitHub release
-- [ ] README updated
+- [x] `install.sh` builds from source
+- [x] README updated

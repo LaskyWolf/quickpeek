@@ -3,8 +3,8 @@
 <img src=".github/assets/banner.svg" width="100%" alt="QuickPeek: press Space in Dolphin, see inside any file" />
 
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
-[![Python 3](https://img.shields.io/badge/python-3-3776AB?logo=python&logoColor=white)](quickpeek.py)
-[![Qt 6](https://img.shields.io/badge/Qt-6%20(PySide6)-41CD52?logo=qt&logoColor=white)](quickpeek.py)
+[![Rust](https://img.shields.io/badge/Rust-cxx--qt-DEA584?logo=rust&logoColor=white)](Cargo.toml)
+[![Qt 6](https://img.shields.io/badge/Qt-6%20(QML)-41CD52?logo=qt&logoColor=white)](qml/Main.qml)
 
 **Select a file in Dolphin, press Space, see what is inside.**
 Previews for images, PDF, video, 3D models, code and more.
@@ -59,9 +59,9 @@ On Arch, Fedora, Debian, openSUSE and distributions based on them:
 curl -fsSL https://raw.githubusercontent.com/LaskyWolf/quickpeek/main/install.sh | bash
 ```
 
-The script installs the Qt packages it needs with your package manager (it asks for your password through `sudo`), then puts KDEQuickPeek in `~/.local`. If your distribution's PySide6 lacks a part, it downloads PySide6 from PyPI instead (about 600 MB; the window then uses the plain Qt look instead of your Plasma theme).
+The script installs Rust, a C++ compiler and the Qt and KDE packages it needs with your package manager (it asks for your password through `sudo`). It then builds KDEQuickPeek from source against your distribution's Qt and puts it in `~/.local`. It needs Qt 6.10 or newer. If your distribution's Rust is older than 1.92, it offers to install rustup into your home folder.
 
-Run the same command again to update. To uninstall:
+The first build takes a few minutes. Run the same command again to update: it builds the latest version. To uninstall:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LaskyWolf/quickpeek/main/install.sh | bash -s -- --uninstall
@@ -73,11 +73,11 @@ On Arch or CachyOS you can build a package instead, from a clone of this reposit
 makepkg -si
 ```
 
-Both ways install `quickpeek`, `quickpeek-desktop`, the "Quick Preview" entry in Dolphin's right-click menu and a "KDEQuickPeek" entry in the application menu. The menu entry only opens a short window that says it works: previews start from Dolphin.
+Both ways install `quickpeek`, `quickpeek-window`, `quickpeek-desktop`, the "Quick Preview" entry in Dolphin's right-click menu and a "KDEQuickPeek" entry in the application menu. The menu entry only opens a short window that says it works: previews start from Dolphin.
 
-Some previews use other programs when they are installed: ffmpeg (video and audio), poppler (PDF thumbnails), 7zip or libarchive (archives), assimp and blender (3D models), krita, onlyoffice (Office files and presentations). See `optdepends` in `PKGBUILD` for the full list.
+Some previews use other programs when they are installed: ffmpeg (video and audio), poppler (PDF details), 7zip (more archive formats), assimp and blender (3D models), krita, onlyoffice (Office files and presentations). See `optdepends` in `PKGBUILD` for the full list.
 
-To make Space open quickpeek on desktop icons:
+To make Space open quickpeek on desktop icons (needs `python3`):
 
 ```bash
 quickpeek-desktop install
@@ -90,28 +90,30 @@ AI models download on first use into `~/.local/share/quickpeek/models`.
 
 ## Tech stack
 
-- Python 3 with PySide6 (Qt 6): widgets, Qt Quick 3D, Qt Multimedia, Qt PDF.
-- Optional: PyMuPDF, ONNX Runtime (AI tools), NumPy, SciPy, Pillow, openpyxl, Pygments.
+- Rust with cxx-qt (Qt 6 bindings), QML screens: Qt Quick 3D, Qt Multimedia, Qt PDF, Kirigami.
+- Optional: ONNX Runtime (AI tools), loaded at run time.
 - Optional programs: ffmpeg, OnlyOffice, assimp, Blender, Krita, poppler, 7zip.
 
 ## Project structure
 
 ```
-quickpeek.py          the app, one file
+rust/                 the app: `main.rs` is the `quickpeek` launcher, `window.rs` the window
+qml/                  the screens, one file per previewer
+cpp/                  small C++ helpers for Qt APIs
+launcher/             Cargo package of the `quickpeek` launcher
 quickpeek-desktop.py  makes Space work on Plasma desktop icons
 quickpeek.desktop     Dolphin right-click entry
 quickpeek-app.desktop application menu entry
 quickpeek.svg         icon
 install.sh            curl installer
 PKGBUILD              Arch package
-test_quickpeek.py     tests
 docs/                 notes
 ```
 
 ## Tests
 
 ```bash
-QT_QPA_PLATFORM=offscreen python3 test_quickpeek.py
+cargo test --workspace
 ```
 
 ## License
