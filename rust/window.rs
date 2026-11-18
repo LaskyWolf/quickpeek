@@ -28,7 +28,11 @@ fn main() {
         helpers::add_pdf_pages(engine.as_mut());
         engine.load(&QUrl::from("qrc:/qt/qml/com/quickpeek/qml/Main.qml"));
     }
-    // Exit without tearing the QML scene down: worker threads may still be finishing,
-    // and the window only quits on `quickpeek --quit`, when nothing is left to save
-    std::process::exit(helpers::exec_app());
+    // Exit without tearing anything down: worker threads (ffmpeg's decoders too) may still be running,
+    // and exit() would free the C library's state under them. The window only quits on `quickpeek --quit`.
+    let code = helpers::exec_app();
+    unsafe extern "C" {
+        fn _exit(code: i32) -> !;
+    }
+    unsafe { _exit(code) }
 }
