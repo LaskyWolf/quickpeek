@@ -1014,7 +1014,6 @@ dependencies = [
  "memchr",
  "memmap2",
  "png",
- "quick-xml",
  "roxmltree",
  "rusqlite",
  "ruzstd",

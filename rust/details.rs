@@ -280,35 +280,16 @@ fn office_rows(path: &Path) -> Option<Rows> {
 
 /// First non-empty text of each element by local name, plus OpenDocument's document-statistic attributes.
 fn xml_fields(xml: &str, found: &mut HashMap<String, String>) {
-    use quick_xml::events::Event;
-    let mut reader = quick_xml::Reader::from_str(xml);
-    let (mut tag, mut text) = (None::<String>, String::new());
-    let flush = |tag: &mut Option<String>, text: &mut String, found: &mut HashMap<String, String>| {
-        if let Some(t) = tag.take() {
-            if !text.trim().is_empty() {
-                found.entry(t).or_insert_with(|| text.trim().to_string());
+    let Ok(doc) = roxmltree::Document::parse(xml) else { return };
+    for node in doc.descendants().filter(|n| n.is_element()) {
+        let name = node.tag_name().name();
+        if name == "document-statistic" {
+            for a in node.attributes() {
+                found.entry(a.name().to_string()).or_insert_with(|| a.value().to_string());
             }
         }
-        text.clear();
-    };
-    loop {
-        match reader.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                flush(&mut tag, &mut text, found);
-                let name = e.local_name().as_ref().to_string();
-                if name == "document-statistic" {
-                    for a in e.attributes().flatten() {
-                        let key = a.key.local_name().as_ref().to_string();
-                        found.entry(key).or_insert_with(|| a.normalized_value(quick_xml::XmlVersion::Implicit1_0).map(|v| v.into_owned()).unwrap_or_default());
-                    }
-                }
-                tag = Some(name);
-            }
-            Ok(Event::Text(t)) => text.push_str(&t.xml10_content()),
-            Ok(Event::GeneralRef(r)) => text.push_str(&quick_xml::escape::unescape(&format!("&{};", &*r)).unwrap_or_default()),
-            Ok(Event::End(_)) => flush(&mut tag, &mut text, found),
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
+        if let Some(text) = node.text().map(str::trim).filter(|t| !t.is_empty()) {
+            found.entry(name.to_string()).or_insert_with(|| text.to_string());
         }
     }
 }
@@ -582,7 +563,7 @@ mod tests {
         let mut found = HashMap::new();
         xml_fields(r#"<cp:coreProperties xmlns:cp="x" xmlns:dc="d"><dc:title>A &amp; B</dc:title><dc:creator>Ann</dc:creator>
             <dcterms:created xmlns:dcterms="t">2024-01-02T03:04:05Z</dcterms:created></cp:coreProperties>"#, &mut found);
-        xml_fields(r#"<office:meta xmlns:meta="m"><meta:document-statistic meta:page-count="4" meta:word-count="99"/></office:meta>"#, &mut found);
+        xml_fields(r#"<office:meta xmlns:office="o" xmlns:meta="m"><meta:document-statistic meta:page-count="4" meta:word-count="99"/></office:meta>"#, &mut found);
         assert_eq!(shown(&office_fields(&found)), [
             ("Title", "A & B".into()), ("Last author", "Ann".into()), ("Created", "2024-01-02 03:04:05".into()),
             ("Pages", "4".into()), ("Words", "99".into())]);
