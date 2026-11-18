@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# KDEQuickPeek installer, for KDE Plasma on Arch, Fedora, Debian/Ubuntu and openSUSE families.
+# KDEQuickPeek installer, for KDE Plasma on Arch, Fedora, Ubuntu (26.04+) and openSUSE families. Needs Qt 6.10+.
 #
 #   Install or update:  curl -fsSL https://raw.githubusercontent.com/LaskyWolf/quickpeek/main/install.sh | bash
 #   Uninstall:          curl -fsSL https://raw.githubusercontent.com/LaskyWolf/quickpeek/main/install.sh | bash -s -- --uninstall

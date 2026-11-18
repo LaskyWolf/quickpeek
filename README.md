@@ -53,7 +53,7 @@ Right-click in the preview for the file menu: Open With, Show in Folder, Set as 
 
 ## Install
 
-On Arch, Fedora, Debian, openSUSE and distributions based on them:
+On Arch, Fedora, Ubuntu 26.04 or newer, openSUSE Tumbleweed and distributions based on them (Qt 6.10 or newer; Debian 13 has Qt 6.8 and is not supported):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LaskyWolf/quickpeek/main/install.sh | bash
