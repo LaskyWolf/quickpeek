@@ -299,3 +299,49 @@ rust::Vec<rust::String> mime_ancestors(rust::Str path)
 }
 
 rust::String locale_integer(std::int64_t value) { return r(QLocale().toString(qlonglong(value))); }
+#include <QFileInfo>
+#include <QMutex>
+#include <QPainter>
+#include <QPdfDocument>
+#include <QQuickImageProvider>
+
+namespace {
+// Renders pages with their annotations. One document stays open, reopened when the file changes on disk.
+class PdfPageProvider : public QQuickImageProvider
+{
+public:
+    PdfPageProvider() : QQuickImageProvider(QQuickImageProvider::Image, ForceAsynchronousImageLoading) {}
+
+    QImage requestImage(const QString &id, QSize *size, const QSize &requested) override
+    {
+        // PAGE/PATH/ANYTHING: the path's slashes are percent-encoded; what follows it only makes a new URL
+        const int page = id.section(u'/', 0, 0).toInt();
+        const QString path = QUrl::fromPercentEncoding(id.section(u'/', 1, 1).toUtf8());
+        const QFileInfo info(path);
+        const QString version = path + info.lastModified().toString(Qt::ISODateWithMs) + QString::number(info.size());
+        QMutexLocker lock(&mutex); // images load on several threads; one document between them
+        if (version != loaded) {
+            doc.load(path);
+            loaded = version;
+        }
+        const QSize pixels = requested.isValid() ? requested : doc.pagePointSize(page).toSize();
+        QImage image(pixels, QImage::Format_RGB32); // pages render transparent: paper white first
+        image.fill(Qt::white);
+        QPdfDocumentRenderOptions options;
+        options.setRenderFlags(QPdfDocumentRenderOptions::RenderFlag::Annotations);
+        QPainter(&image).drawImage(0, 0, doc.render(page, pixels, options));
+        *size = image.size();
+        return image;
+    }
+
+private:
+    QMutex mutex;
+    QPdfDocument doc;
+    QString loaded;
+};
+}
+
+void add_pdf_pages(QQmlApplicationEngine &engine)
+{
+    engine.addImageProvider(QStringLiteral("pdfpage"), new PdfPageProvider);
+}

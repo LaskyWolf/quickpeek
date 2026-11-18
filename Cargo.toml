@@ -14,6 +14,7 @@ strip = true
 [dependencies]
 calamine = { version = "0.38.0", features = ["dates"] }
 csv = "1.4.0"
+lopdf = { version = "0.47.0", default-features = false }
 cxx = "1.0.205"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_full"] }

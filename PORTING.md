@@ -48,7 +48,7 @@ Previewers
 - [x] PostScript (ghostscript)
 
 Tools
-- [ ] PDF editor: pressure pen, text boxes, arrows, signing, save annotations
+- [x] PDF editor: pressure pen, text boxes, arrows, highlighter, save annotations (the Python app has no signing)
 - [ ] File conversions (ffmpeg, assimp, x2t, images)
 - [ ] AI: one runtime (`ort`) and one downloader for subject cut-out (SAM2), background matte, OCR (PaddleOCR)
 - [ ] Image enlarging (waifu2x)

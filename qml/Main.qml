@@ -76,6 +76,8 @@ ApplicationWindow {
     // Stay running hidden: the next file shows up instantly instead of starting the app again
     onClosing: close => {
         close.accepted = false
+        if (preview.item?.setEditing?.(false, () => win.close()) === false)
+            return // it asks about unsaved drawings first
         if (visibility === Window.Windowed) {
             settings.width = width
             settings.height = height

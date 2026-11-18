@@ -39,3 +39,4 @@ struct ImageHeader;
 ImageHeader image_header(rust::Str path);
 rust::Vec<rust::String> mime_ancestors(rust::Str path);
 rust::String locale_integer(std::int64_t value);
+void add_pdf_pages(QQmlApplicationEngine &engine);

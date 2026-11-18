@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // A PDF for reading: every page in one scrolling column, zoom, PageUp/PageDown, Ctrl+F search, drag to select text.
-// An edit mode would swap `reader` for a drawing canvas and add its button to the toolbar.
+// E or the Edit button swaps the reader for the drawing editor (PdfEditor.qml).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -11,7 +11,27 @@ ColumnLayout {
     property alias source: doc.source
     property string fit: "width" // "width", "page", or "" once you zoom by hand
     readonly property var found: reader.searchModel
+    property bool editing
     spacing: 0
+
+    /// Swaps the reader for the drawing editor. False while it asks about unsaved drawings; `then` runs once
+    /// you chose Save or Discard.
+    function setEditing(on, then) {
+        if (on === editing)
+            return true
+        if (!on) {
+            if (!editor.item.leave(() => { if (view.setEditing(false)) then?.() }))
+                return false
+        }
+        const page = editor.item?.page
+        editing = on
+        if (!on) {
+            Qt.callLater(reader.goToPage, page) // once the reader is laid out again
+            view.forceActiveFocus() // hand the keys back to the window
+        }
+        return true
+    }
+    Shortcut { sequence: "E"; enabled: !view.editing; onActivated: view.setEditing(true) }
 
     PdfDocument { id: doc; onStatusChanged: view.refit() }
 
@@ -70,6 +90,7 @@ ColumnLayout {
         Layout.margins: 4
         Layout.leftMargin: 12
         spacing: 2
+        visible: !view.editing
 
         Label {
             text: doc.pageCount > 0 ? `Page ${reader.currentPage + 1} of ${doc.pageCount}` : ""
@@ -78,16 +99,33 @@ ColumnLayout {
         Item { Layout.fillWidth: true }
         Tool { name: "edit-copy"; tip: "Copy the selected text (Ctrl+C)"; label: "Copy"; visible: reader.selectedText !== ""; onClicked: view.copy() }
         Tool { name: "edit-find"; tip: "Find (Ctrl+F)"; onClicked: searchBar.open() }
+        Tool { name: "document-edit"; label: "Edit"; tip: "Draw shapes, highlight and write text on the pages (E)"; onClicked: view.setEditing(true) }
         Tool { name: "zoom-out"; tip: "Zoom out (Ctrl+-)"; onClicked: view.zoom(1 / 1.25) }
         Tool { name: "zoom-in"; tip: "Zoom in (Ctrl++)"; onClicked: view.zoom(1.25) }
         Tool { name: "zoom-fit-width"; tip: "Fit width"; checked: view.fit === "width"; onClicked: view.fit = "width" }
         Tool { name: "zoom-fit-best"; tip: "Fit page"; checked: view.fit === "page"; onClicked: view.fit = "page" }
     }
 
+    Loader {
+        id: editor
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        active: view.editing
+        visible: active
+        focus: true
+        sourceComponent: PdfEditor {
+            document: doc
+            path: decodeURIComponent(doc.source.toString().replace(/^file:\/\//, ""))
+            startPage: reader.currentPage
+            onDone: view.setEditing(false)
+        }
+    }
+
     Item {
         Layout.fillWidth: true
         Layout.fillHeight: true
         clip: true
+        visible: !view.editing
 
         // The pages' text selections ask for keyboard focus. Inside a scope that never gets it, they can't take
         // Space and the arrows from the window.

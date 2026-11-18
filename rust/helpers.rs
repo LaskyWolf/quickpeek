@@ -56,6 +56,8 @@ pub mod ffi {
         fn image_header(path: &str) -> ImageHeader;
         fn mime_ancestors(path: &str) -> Vec<String>;
         fn locale_integer(value: i64) -> String;
+        /// `image://pdfpage/PAGE/PATH/REVISION` (PATH percent-encoded): a PDF page with its annotations, which QtPdf's QML views leave out.
+        fn add_pdf_pages(engine: Pin<&mut QQmlApplicationEngine>);
     }
 
     /// A rendered page: 0xffRRGGBB pixels, row by row.
