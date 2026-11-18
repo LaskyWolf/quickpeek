@@ -162,16 +162,24 @@ ColumnLayout {
             onTriggered: orbit.eulerRotation.y += frameTime * 30 // degrees per second
         }
         // fit() sizes the clip planes to the model; the controller's own clipping would reset them on every zoom
-        OrbitCameraController { anchors.fill: parent; origin: orbit; camera: camera; enabled: !view.flying; automaticClipping: false }
-        // Touchpad pinch only zooms. The controller's own pinch also pans by however much the fingers drift,
-        // which moves the view a little on every pinch; this one is on top, so it takes the gesture first.
-        Item {
+        OrbitCameraController {
             anchors.fill: parent
-            PinchHandler {
-                target: null
-                enabled: !view.flying
-                onScaleChanged: delta => camera.z /= delta
+            origin: orbit
+            camera: camera
+            enabled: !view.flying
+            automaticClipping: false
+            // Its pinch also pans by however much the fingers slide, so the view drifts on every touchpad
+            // pinch: switched off, the PinchHandler below zooms instead
+            Component.onCompleted: {
+                for (const handler of data)
+                    if (String(handler).startsWith("QQuickPinchHandler"))
+                        handler.enabled = false
             }
+        }
+        PinchHandler {
+            target: null
+            enabled: !view.flying
+            onScaleChanged: delta => camera.z /= delta
         }
         // R / F would move along the camera's own up, which tilts with the view: off, Q / E lift instead.
         // Its keys come from flyKeys, so it never takes the focus itself.
