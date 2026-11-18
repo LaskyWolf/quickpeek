@@ -35,10 +35,12 @@ ApplicationWindow {
             } else if (win.visible && path === peek.path) {
                 win.close() // Space on the same file again closes, like Sushi
             } else {
-                win.sideOpen = false
-                peek.open(path)
                 peek.activate(token)
                 win.showAndRaise()
+                win.leaveThen(() => {
+                    win.sideOpen = false
+                    peek.open(path)
+                })
             }
         }
     }
@@ -47,6 +49,12 @@ ApplicationWindow {
         show()
         raise()
         requestActivate()
+    }
+
+    /// Runs `action` once the view lets go: the PDF editor asks about unsaved drawings first.
+    function leaveThen(action) {
+        if (preview.item?.setEditing?.(false, action) !== false)
+            action()
     }
 
     function note(text) {
@@ -77,7 +85,7 @@ ApplicationWindow {
     onClosing: close => {
         close.accepted = false
         if (preview.item?.setEditing?.(false, () => win.close()) === false)
-            return // it asks about unsaved drawings first
+            return // the PDF editor asks about unsaved drawings first
         if (visibility === Window.Windowed) {
             settings.width = width
             settings.height = height
@@ -149,8 +157,8 @@ ApplicationWindow {
                 Image { visible: false; asynchronous: true; source: modelData }
             }
 
-            NavArrow { anchors.left: parent.left; iconName: "go-previous"; tip: "Previous file (←)"; onClicked: peek.step(-1) }
-            NavArrow { anchors.right: parent.right; iconName: "go-next"; tip: "Next file (→)"; onClicked: peek.step(1) }
+            NavArrow { anchors.left: parent.left; iconName: "go-previous"; tip: "Previous file (←)"; onClicked: win.leaveThen(() => peek.step(-1)) }
+            NavArrow { anchors.right: parent.right; iconName: "go-next"; tip: "Next file (→)"; onClicked: win.leaveThen(() => peek.step(1)) }
         }
 
         RowLayout {

@@ -26,6 +26,7 @@ ColumnLayout {
         const page = editor.item?.page
         editing = on
         if (!on) {
+            reader.revision++ // a save changed the file: show the drawings in it
             Qt.callLater(reader.goToPage, page) // once the reader is laid out again
             view.forceActiveFocus() // hand the keys back to the window
         }
@@ -39,10 +40,11 @@ ColumnLayout {
         if (doc.status !== PdfDocument.Ready || reader.width <= 0)
             return
         const margin = 24 // the scrollbar and a little air around the page
+        // the widest page fits, so a landscape page among portrait ones never needs a sideways scrollbar
         if (fit === "width")
-            reader.scaleToWidth(reader.width - margin, reader.height)
+            reader.renderScale = (reader.width - margin) / doc.maxPageWidth
         else if (fit === "page")
-            reader.scaleToPage(reader.width - margin, reader.height - margin)
+            reader.renderScale = Math.min((reader.width - margin) / doc.maxPageWidth, (reader.height - margin) / doc.maxPageHeight)
     }
     onFitChanged: refit()
 
@@ -132,20 +134,12 @@ ColumnLayout {
         // Space and the arrows from the window.
         FocusScope {
             anchors.fill: parent
-            PdfMultiPageView {
+            PdfReader {
                 id: reader
                 anchors.fill: parent
                 document: doc
                 onWidthChanged: view.refit()
                 onHeightChanged: view.refit()
-                // Its columns are wider than the view by a scrollbar, which always shows a horizontal scrollbar.
-                // ponytail: reaches into Qt's own component; copy PdfMultiPageView.qml here if a Qt update breaks it.
-                Component.onCompleted: {
-                    const table = children.find(child => child instanceof TableView)
-                    table.columnWidthProvider = () => Math.max(table.width, doc.maxPageWidth * renderScale)
-                    table.pointerNavigationEnabled = false // a click would take the keys from the window
-                    table.acceptedButtons = Qt.NoButton // dragging the mouse selects text; wheel and touch still scroll
-                }
             }
         }
 

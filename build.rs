@@ -1,7 +1,7 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
 fn main() {
-    CxxQtBuilder::new_qml_module(QmlModule::new("com.quickpeek").qml_files(["qml/Main.qml", "qml/ImageView.qml", "qml/FontView.qml", "qml/MediaView.qml", "qml/SheetView.qml", "qml/TextView.qml", "qml/PdfView.qml", "qml/FolderView.qml", "qml/ArchiveView.qml", "qml/OfficeView.qml", "qml/SlideView.qml", "qml/ModelView.qml", "qml/SidePanel.qml", "qml/FileMenu.qml", "qml/PdfEditor.qml"]))
+    CxxQtBuilder::new_qml_module(QmlModule::new("com.quickpeek").qml_files(["qml/Main.qml", "qml/ImageView.qml", "qml/FontView.qml", "qml/MediaView.qml", "qml/SheetView.qml", "qml/TextView.qml", "qml/PdfView.qml", "qml/FolderView.qml", "qml/ArchiveView.qml", "qml/OfficeView.qml", "qml/SlideView.qml", "qml/ModelView.qml", "qml/SidePanel.qml", "qml/FileMenu.qml", "qml/PdfEditor.qml", "qml/PdfReader.qml"]))
         .qt_module("Widgets")
         .qt_module("DBus")
         .qt_module("Network")
