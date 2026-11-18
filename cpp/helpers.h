@@ -29,3 +29,4 @@ void block_network(QQmlApplicationEngine &engine);
 rust::String thumbnail_key(rust::Str path);
 rust::String mime_icon_for_name(rust::Str name);
 rust::String local_time(std::int64_t secs);
+void add_pdf_pages(QQmlApplicationEngine &engine);

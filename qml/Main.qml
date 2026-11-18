@@ -61,6 +61,8 @@ ApplicationWindow {
     // Stay running hidden: the next file shows up instantly instead of starting the app again
     onClosing: close => {
         close.accepted = false
+        if (preview.item?.setEditing?.(false, () => win.close()) === false)
+            return // it asks about unsaved drawings first
         hide()
         peek.clear() // free the preview's memory while hidden
     }

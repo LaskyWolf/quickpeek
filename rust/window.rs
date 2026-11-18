@@ -7,6 +7,7 @@ mod browse;
 mod files;
 mod helpers;
 mod media;
+mod pdfedit;
 mod sheet;
 mod socket;
 mod text;
@@ -18,6 +19,7 @@ fn main() {
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {
         helpers::block_network(engine.as_mut());
+        helpers::add_pdf_pages(engine.as_mut());
         engine.load(&QUrl::from("qrc:/qt/qml/com/quickpeek/qml/Main.qml"));
     }
     // Exit without tearing the QML scene down: worker threads may still be finishing,

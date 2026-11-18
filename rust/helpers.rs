@@ -46,6 +46,8 @@ pub mod ffi {
         fn thumbnail_key(path: &str) -> String;
         fn mime_icon_for_name(name: &str) -> String;
         fn local_time(secs: i64) -> String;
+        /// `image://pdfpage/PAGE/PATH/REVISION` (PATH percent-encoded): a PDF page with its annotations, which QtPdf's QML views leave out.
+        fn add_pdf_pages(engine: Pin<&mut QQmlApplicationEngine>);
     }
 }
 
